@@ -1,0 +1,7 @@
+﻿data/photos.db
+__pycache__/
+*.pyc
+scraper/chrome_profile/
+scraper/browser_profile/
+scraper/session_cookie.json
+scraper/cookies.json.stale

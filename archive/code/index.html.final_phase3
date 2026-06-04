@@ -1,0 +1,1538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Milosevic Camp Planner</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green:     #2e7d32;
+      --green-lt:  #4caf50;
+      --green-bg:  #e8f5e9;
+      --grey:      #757575;
+      --grey-lt:   #f5f5f5;
+      --border:    #e0e0e0;
+      --text:      #212121;
+      --soft:      #616161;
+      --radius:    8px;
+      --shadow:    0 1px 4px rgba(0,0,0,.12);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px; color: var(--text); background: #fafafa;
+      height: 100vh; display: flex; flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--green); color: #fff;
+      padding: 0 20px; display: flex; align-items: center; gap: 24px;
+      height: 54px; flex-shrink: 0;
+      box-shadow: 0 2px 6px rgba(0,0,0,.2); z-index: 100;
+    }
+    header h1 { font-size: 17px; font-weight: 600; white-space: nowrap; }
+    .tabs { display: flex; gap: 2px; }
+    .tab {
+      background: none; border: none; color: rgba(255,255,255,.75);
+      font-size: 14px; font-weight: 500; padding: 6px 14px;
+      border-radius: var(--radius); cursor: pointer; transition: background .15s, color .15s;
+    }
+    .tab:hover  { background: rgba(255,255,255,.15); color: #fff; }
+    .tab.active { background: rgba(255,255,255,.22); color: #fff; }
+    .scraper-btn {
+      margin-left: auto; background: rgba(255,255,255,.18);
+      border: 1px solid rgba(255,255,255,.35); color: #fff;
+      font-size: 13px; font-weight: 500; padding: 5px 14px;
+      border-radius: var(--radius); cursor: pointer; transition: background .15s; white-space: nowrap;
+    }
+    .scraper-btn:hover   { background: rgba(255,255,255,.28); }
+    .scraper-btn.running { opacity: .6; cursor: not-allowed; }
+
+    /* ── Layout ── */
+    .main { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 300px; flex-shrink: 0; background: #fff;
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .sidebar-header {
+      padding: 14px 16px 10px; border-bottom: 1px solid var(--border);
+      font-size: 12px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .06em; color: var(--soft);
+    }
+    .sidebar-body { flex: 1; overflow-y: auto; }
+
+    .park-item {
+      padding: 10px 16px; border-bottom: 1px solid var(--border);
+      cursor: pointer; transition: background .1s;
+    }
+    .park-item:hover    { background: var(--grey-lt); }
+    .park-item.selected { background: var(--green-bg); }
+    .park-item .park-name { font-weight: 500; font-size: 13px; line-height: 1.3; }
+    .park-item .park-meta { font-size: 12px; color: var(--soft); margin-top: 3px; }
+    .avail-badge {
+      display: inline-block; font-size: 11px; font-weight: 600;
+      padding: 1px 7px; border-radius: 99px; margin-top: 4px;
+    }
+    .avail-badge.has  { background: var(--green-bg); color: var(--green); }
+    .avail-badge.none { background: var(--grey-lt);  color: var(--grey); }
+
+    /* ── Content ── */
+    .content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+    .view { display: none; flex: 1; overflow: hidden; }
+    .view.active { display: flex; flex-direction: column; }
+
+    /* ── Map ── */
+    .map-filter-bar {
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+      padding: 8px 16px; background: #fff; border-bottom: 1px solid var(--border);
+      font-size: 13px; flex-wrap: wrap;
+    }
+    .map-filter-bar label { font-weight: 500; color: var(--soft); }
+    .map-filter-bar input[type=date] {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 5px 10px; font-size: 13px;
+    }
+    .map-filter-bar .clear-link {
+      font-size: 12px; color: var(--soft); cursor: pointer; text-decoration: underline;
+      margin-left: 4px;
+    }
+    .map-filter-bar .result-count {
+      margin-left: auto; font-size: 12px; color: var(--soft);
+    }
+    #map { flex: 1; }
+
+    /* ── Browse ── */
+    /* Two-column layout: map panel left, cards panel right */
+    .browse-layout {
+      display: flex; flex: 1; overflow: hidden;
+    }
+    .browse-map-col {
+      width: 52%; flex-shrink: 0; overflow: hidden;
+      background: #f0f0e8; border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+    }
+    .browse-map-col-inner {
+      flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .browse-content-col {
+      flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+    }
+    .browse-content-col-inner { padding: 16px; }
+    .browse-inner { flex: 1; overflow-y: auto; padding: 20px; }
+    .browse-empty { color: var(--soft); text-align: center; margin-top: 60px; font-size: 15px; }
+
+    /* Boucle tab selector */
+    .boucle-tabs {
+      display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 0;
+      border-bottom: 1px solid var(--border); background: rgba(255,255,255,.6);
+      flex-shrink: 0;
+    }
+    .boucle-tab {
+      background: none; border: 1px solid var(--border); color: var(--soft);
+      font-size: 12px; font-weight: 500; padding: 4px 10px;
+      border-radius: 99px; cursor: pointer; transition: all .15s;
+    }
+    .boucle-tab:hover   { border-color: var(--green-lt); color: var(--green); }
+    .boucle-tab.active  { background: var(--green); color: #fff; border-color: var(--green); }
+
+    /* Site map with dot overlay */
+    .site-map-wrap {
+      position: relative; display: block; line-height: 0; flex-shrink: 0;
+    }
+    .site-map-wrap { position: relative; margin: 12px; }
+    .site-map-wrap img { width: 100%; display: block; border-radius: var(--radius); border: 1px solid var(--border); }
+    .site-map-container { position: relative; display: inline-block; width: 100%; }
+    .site-map-legend {
+      display: flex; gap: 16px; font-size: 12px; margin-top: 8px; padding: 8px;
+      background: var(--grey-lt); border-radius: var(--radius);
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0,0,0,.1); }
+    .legend-dot.available { background: #2e7d32; }
+    .legend-dot.partial { background: #f57c00; }
+    .legend-dot.full { background: #b71c1c; }
+
+    .map-dot {
+      position: absolute;
+      width: 16px; height: 16px; border-radius: 50%;
+      transform: translate(-50%, -50%);
+      border: 2px solid #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,.3), inset 0 1px 1px rgba(255,255,255,.3);
+      cursor: pointer;
+      transition: transform .15s, box-shadow .15s, width .15s, height .15s;
+      z-index: 1;
+    }
+    .map-dot:hover, .map-dot.hovered {
+      width: 24px; height: 24px;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 2px 6px rgba(0,0,0,.4), inset 0 1px 1px rgba(255,255,255,.4);
+      z-index: 10;
+    }
+    .map-dot.dot-green   { background: #2e7d32; }
+    .map-dot.dot-yellow  { background: #f57c00; }
+    .map-dot.dot-red     { background: #b71c1c; opacity: .7; }
+    .map-dot.dot-unknown { background: #9e9e9e; opacity: .5; }
+    .map-dot-tip {
+      position: absolute; bottom: calc(100% + 8px); left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,.85); color: #fff; font-size: 11px; font-weight: 500;
+      padding: 4px 8px; border-radius: 4px; white-space: nowrap;
+      pointer-events: none; opacity: 0; transition: opacity .12s; z-index: 20;
+      box-shadow: 0 2px 4px rgba(0,0,0,.2);
+    }
+    .map-dot:hover .map-dot-tip { opacity: 1; }
+
+    /* Card highlight from map hover */
+    .browse-site-card.hovered {
+      box-shadow: 0 0 0 2px var(--green), var(--shadow);
+      border-color: var(--green);
+    }
+
+    .park-title { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+    .park-sub   { color: var(--soft); font-size: 13px; margin-bottom: 18px; }
+
+    /* Breadcrumb */
+    .breadcrumb {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 13px; color: var(--soft); margin-bottom: 16px;
+    }
+    .breadcrumb a { color: var(--green); cursor: pointer; text-decoration: none; }
+    .breadcrumb a:hover { text-decoration: underline; }
+    .breadcrumb .sep { color: var(--border); }
+
+    /* Sector cards */
+    .sector-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+      gap: 12px; margin-bottom: 20px;
+    }
+    .sector-card {
+      background: #fff; border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px;
+      box-shadow: var(--shadow); cursor: pointer;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .sector-card:hover {
+      border-color: var(--green-lt);
+      box-shadow: 0 2px 8px rgba(46,125,50,.15);
+    }
+    .sector-card .sc-name   { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+    .sector-card .sc-avail  { font-size: 12px; color: var(--green); font-weight: 500; }
+    .sector-card .sc-none   { font-size: 12px; color: var(--grey); }
+    .sector-card .sc-price  { font-size: 12px; color: var(--soft); margin-top: 2px; }
+
+    /* Filter row */
+    .filter-row {
+      display: flex; gap: 10px; align-items: center;
+      margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .filter-row label { font-size: 13px; font-weight: 500; }
+    .filter-row input[type=date] {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 5px 10px; font-size: 13px;
+    }
+    .btn {
+      background: var(--green); color: #fff; border: none;
+      border-radius: var(--radius); padding: 6px 14px;
+      font-size: 13px; font-weight: 500; cursor: pointer; transition: background .15s;
+    }
+    .btn:hover { background: var(--green-lt); }
+    .btn-outline {
+      background: none; color: var(--green);
+      border: 1px solid var(--green-lt);
+    }
+    .btn-outline:hover { background: var(--green-bg); }
+
+    /* Availability table */
+    .avail-table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th {
+      text-align: left; padding: 8px 12px;
+      border-bottom: 2px solid var(--border);
+      font-weight: 600; background: var(--grey-lt);
+      position: sticky; top: 0; z-index: 1;
+    }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+    tr:hover td { background: var(--grey-lt); }
+
+    .pill {
+      display: inline-block; font-size: 11px; font-weight: 600;
+      padding: 2px 8px; border-radius: 99px;
+    }
+    .pill.avail   { background: var(--green-bg); color: var(--green); }
+    .pill.unavail { background: #ffebee; color: #c62828; }
+
+    .book-link {
+      display: inline-block; font-size: 12px; font-weight: 600;
+      color: var(--green); text-decoration: none;
+      padding: 3px 10px; border: 1px solid var(--green-lt);
+      border-radius: 99px; transition: background .15s;
+    }
+    .book-link:hover { background: var(--green-bg); }
+
+    /* ── Search ── */
+    .search-inner { flex: 1; overflow-y: auto; padding: 20px; }
+    .search-form {
+      background: #fff; border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px;
+      display: flex; gap: 12px; align-items: flex-end;
+      flex-wrap: wrap; margin-bottom: 20px; box-shadow: var(--shadow);
+    }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 12px; font-weight: 600; color: var(--soft); }
+    .form-group input {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 6px 10px; font-size: 13px;
+    }
+
+    .result-park {
+      background: #fff; border: 1px solid var(--border);
+      border-radius: var(--radius); margin-bottom: 12px;
+      box-shadow: var(--shadow); overflow: hidden;
+    }
+    .result-park-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 16px; cursor: pointer; transition: background .1s;
+    }
+    .result-park-header:hover { background: var(--grey-lt); }
+    .result-park-name  { font-weight: 600; font-size: 15px; }
+    .result-park-meta  { font-size: 12px; color: var(--soft); margin-top: 2px; }
+    .result-park-price { font-size: 16px; font-weight: 700; color: var(--green); }
+    .result-park-price-label { font-size: 11px; color: var(--soft); }
+
+    .result-sectors { border-top: 1px solid var(--border); }
+    .result-sector-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 16px 10px 28px; border-bottom: 1px solid var(--border);
+      cursor: pointer; transition: background .1s;
+    }
+    .result-sector-row:last-child { border-bottom: none; }
+    .result-sector-row:hover { background: var(--green-bg); }
+    .rs-name  { font-size: 13px; font-weight: 500; }
+    .rs-meta  { font-size: 12px; color: var(--soft); }
+    .rs-right { text-align: right; }
+    .rs-price { font-size: 13px; font-weight: 600; color: var(--green); }
+
+    /* ── Scraper panel ── */
+    .scraper-panel {
+      position: fixed; bottom: 0; right: 0; width: 480px; max-height: 300px;
+      background: #1e1e1e; color: #d4d4d4;
+      border-top-left-radius: var(--radius);
+      box-shadow: -2px -2px 12px rgba(0,0,0,.3);
+      display: flex; flex-direction: column;
+      font-family: "Cascadia Code", "Fira Mono", monospace; font-size: 12px;
+      z-index: 1000; transform: translateY(100%); transition: transform .25s ease;
+    }
+    .scraper-panel.open { transform: translateY(0); }
+    .scraper-panel-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 12px; background: #2d2d2d; border-bottom: 1px solid #3d3d3d;
+      border-top-left-radius: var(--radius); flex-shrink: 0;
+    }
+    .scraper-panel-hdr span { font-weight: 600; color: #e0e0e0; font-family: sans-serif; }
+    .scraper-panel-hdr button { background: none; border: none; color: #888; font-size: 16px; cursor: pointer; }
+    .scraper-log { flex: 1; overflow-y: auto; padding: 10px 12px; white-space: pre-wrap; word-break: break-all; line-height: 1.5; }
+    .log-ok   { color: #89d185; }
+    .log-warn { color: #cca700; }
+    .log-err  { color: #f48771; }
+
+    .loading { color: var(--soft); padding: 20px; text-align: center; }
+    .no-data { color: var(--soft); font-size: 13px; padding: 10px 0; }
+
+    /* Boucle map image */
+    .boucle-map-img {
+      max-width: 100%; border-radius: var(--radius);
+      border: 1px solid var(--border); margin-bottom: 14px;
+      display: block;
+    }
+
+    /* Campsite photo on cards */
+    .site-card-photo {
+      width: 100%; height: 120px; object-fit: cover;
+      border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+      background: var(--grey-lt); display: block;
+      cursor: zoom-in; transition: opacity .15s;
+    }
+    .site-card-photo:hover { opacity: .88; }
+
+    /* Lightbox */
+    #lightbox {
+      display: none; position: fixed; inset: 0; z-index: 2000;
+      background: rgba(0,0,0,.82); align-items: center; justify-content: center;
+      cursor: zoom-out;
+    }
+    #lightbox.open { display: flex; }
+    #lightbox img {
+      max-width: 96vw; max-height: 94vh;
+      min-width: min(600px, 96vw);
+      border-radius: var(--radius); box-shadow: 0 8px 40px rgba(0,0,0,.6);
+      cursor: default; object-fit: contain;
+    }
+    #lightbox-caption {
+      position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,.6); color: #fff; font-size: 13px; font-weight: 500;
+      padding: 6px 16px; border-radius: 99px; white-space: nowrap; pointer-events: none;
+    }
+    #lightbox-close {
+      position: absolute; top: 18px; right: 22px;
+      background: rgba(255,255,255,.15); border: none; color: #fff;
+      font-size: 22px; line-height: 1; width: 38px; height: 38px;
+      border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+    #lightbox-close:hover { background: rgba(255,255,255,.28); }
+    .site-card-photo-wrap {
+      margin: -14px -16px 10px -16px;
+      border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+      overflow: hidden; background: var(--grey-lt);
+      height: 120px;
+    }
+
+    /* Park name labels on map */
+    .park-name-label {
+      background: rgba(255,255,255,.92) !important;
+      border: 1px solid #ddd !important;
+      border-radius: 4px !important;
+      box-shadow: 0 1px 3px rgba(0,0,0,.15) !important;
+      color: #212121 !important;
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      padding: 2px 6px !important;
+      white-space: nowrap !important;
+      pointer-events: none !important;
+    }
+    .park-name-label::before { display: none !important; }
+  </style>
+</head>
+<body>
+
+<div id="cookieBanner" style="display:none;background:#fff3cd;color:#856404;border-bottom:1px solid #ffc107;
+     padding:8px 20px;font-size:13px;display:none;align-items:center;gap:12px;z-index:200">
+  <span id="cookieBannerMsg"></span>
+  <a href="#" style="margin-left:auto;font-weight:600;color:#856404;white-space:nowrap"
+     onclick="document.getElementById('cookieBanner').style.display='none';return false">Dismiss</a>
+</div>
+
+<header>
+  <h1>🏕 Milosevic Camp Planner</h1>
+  <nav class="tabs">
+    <button class="tab active" data-view="map">Map</button>
+    <button class="tab"        data-view="browse">Browse</button>
+    <button class="tab"        data-view="search">Search</button>
+  </nav>
+  <button class="scraper-btn" id="scraperBtn">↺ Refresh Data</button>
+</header>
+
+<div class="main">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">Parks</div>
+    <div class="sidebar-body" id="parkList"><div class="loading">Loading…</div></div>
+  </aside>
+
+  <div class="content">
+
+    <!-- Map -->
+    <div class="view active" id="view-map">
+      <div class="map-filter-bar">
+        <label>Check-in</label>
+        <input type="date" id="mapFrom" />
+        <label>Check-out</label>
+        <input type="date" id="mapTo" />
+        <label>Site type</label>
+        <select id="mapSiteType" style="border:1px solid var(--border);border-radius:var(--radius);padding:5px 10px;font-size:13px;">
+          <option value="">All types</option>
+        </select>
+        <button class="btn" id="mapFilterBtn">Filter</button>
+        <span class="clear-link" id="mapClearBtn">Clear</span>
+        <span class="result-count" id="mapResultCount"></span>
+      </div>
+      <div id="map"></div>
+    </div>
+
+    <!-- Browse -->
+    <div class="view" id="view-browse">
+      <!-- Two-column layout: map on left, content on right -->
+      <div class="browse-layout" id="browseLayout">
+        <div class="browse-map-col" id="browseMapCol">
+          <div class="browse-map-col-inner" id="browseMapInner">
+            <div class="browse-empty" style="margin-top:40px">← Select a park</div>
+          </div>
+        </div>
+        <div class="browse-content-col" id="browseContentCol">
+          <div class="browse-content-col-inner" id="browseInner">
+            <div class="browse-empty">← Select a park to explore availability.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="view" id="view-search">
+      <div class="search-inner">
+        <div class="search-form">
+          <div class="form-group">
+            <label>Check-in</label>
+            <input type="date" id="searchFrom" />
+          </div>
+          <div class="form-group">
+            <label>Check-out</label>
+            <input type="date" id="searchTo" />
+          </div>
+          <button class="btn" id="searchBtn">Search</button>
+        </div>
+        <div id="searchResults"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Lightbox -->
+<div id="lightbox" onclick="closeLightbox(event)">
+  <button id="lightbox-close" onclick="closeLightbox()">✕</button>
+  <img id="lightbox-img" src="" alt="">
+  <div id="lightbox-caption"></div>
+</div>
+
+<!-- Scraper panel -->
+<div class="scraper-panel" id="scraperPanel">
+  <div class="scraper-panel-hdr">
+    <span>Scraper output</span>
+    <button id="closeScraperPanel">✕</button>
+  </div>
+  <div class="scraper-log" id="scraperLog"></div>
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let parks    = [];
+let map      = null;
+let markers  = {};
+let _browseSites = [];   // all sites from the last live-sites fetch (for client-side filtering)
+let activeTab = "map";
+let selectedParkId   = null;
+let selectedSectorId = null;
+let mapFilteredParkIds = null;  // null = no filter active
+let weatherData = {};           // park_id → { days: [...] }
+
+// ─── Weather helpers ──────────────────────────────────────────────────────────
+const WMO = {
+  0:  ["☀️",  "Clear"],
+  1:  ["🌤️", "Mainly clear"],
+  2:  ["⛅",  "Partly cloudy"],
+  3:  ["☁️",  "Overcast"],
+  45: ["🌫️", "Fog"],
+  48: ["🌫️", "Fog"],
+  51: ["🌦️", "Light drizzle"],
+  53: ["🌦️", "Drizzle"],
+  55: ["🌧️", "Heavy drizzle"],
+  61: ["🌧️", "Light rain"],
+  63: ["🌧️", "Rain"],
+  65: ["🌧️", "Heavy rain"],
+  71: ["🌨️", "Light snow"],
+  73: ["🌨️", "Snow"],
+  75: ["❄️",  "Heavy snow"],
+  77: ["🌨️", "Snow grains"],
+  80: ["🌦️", "Rain showers"],
+  81: ["🌧️", "Heavy showers"],
+  82: ["🌧️", "Violent showers"],
+  85: ["🌨️", "Snow showers"],
+  86: ["❄️",  "Heavy snow showers"],
+  95: ["⛈️",  "Thunderstorm"],
+  96: ["⛈️",  "Thunderstorm + hail"],
+  99: ["⛈️",  "Thunderstorm + hail"],
+};
+
+function wmoEmoji(code) { return (WMO[code] || ["🌡️", "Unknown"])[0]; }
+function wmoLabel(code) { return (WMO[code] || ["🌡️", "Unknown"])[1]; }
+
+function shortParkName(name) {
+  return name
+    .replace(/^Parc national (de l[a']|du|des|de|d')\s*/i, "")
+    .replace(/^Parc national /i, "");
+}
+
+// ─── Mosquito model ───────────────────────────────────────────────────────────
+// Derived from weather data; factors: temp, precipitation, wind, Quebec season.
+
+function mosquitoScoreForDay(day) {
+  const avg  = (day.temp_max + day.temp_min) / 2;
+  const wind = day.wind;
+  const precip = day.precip || 0;
+  const month  = new Date(day.date).getMonth() + 1; // 1-12
+
+  // Temperature component (0–5): peak at 22–26°C, dead below 10°C
+  let tempScore;
+  if      (avg < 5)        tempScore = 0;
+  else if (avg < 10)       tempScore = 0.5;
+  else if (avg < 15)       tempScore = 1.5;
+  else if (avg < 20)       tempScore = 2.8;
+  else if (avg < 26)       tempScore = 4.5 + (avg - 20) * 0.1;  // 4.5–5.1
+  else if (avg < 32)       tempScore = 5.0 - (avg - 26) * 0.3;  // drops above 26
+  else                     tempScore = 3.2;
+
+  // Precipitation: moderate rain increases breeding, heavy rain suppresses activity
+  let precipMult;
+  if      (precip === 0)   precipMult = 0.95;
+  else if (precip < 5)     precipMult = 1.15;
+  else if (precip < 15)    precipMult = 1.30;
+  else if (precip < 30)    precipMult = 1.20;
+  else                     precipMult = 0.90;  // heavy rain suppresses activity
+
+  // Wind suppression
+  let windMult;
+  if      (wind < 10)      windMult = 1.00;
+  else if (wind < 20)      windMult = 0.88;
+  else if (wind < 30)      windMult = 0.72;
+  else                     windMult = 0.55;
+
+  // Quebec seasonal pattern: mosquitoes peak June–July
+  const seasonMult = { 1:.1, 2:.1, 3:.15, 4:.3, 5:.65, 6:1.0, 7:1.15, 8:.85, 9:.45, 10:.15, 11:.1, 12:.1 }[month] || 0.1;
+
+  const raw = tempScore * precipMult * windMult * seasonMult;
+  return Math.min(5, Math.max(0, raw));
+}
+
+function mosquitoRating(parkId) {
+  const w = weatherData[parkId];
+  if (!w || !w.days.length) return null;
+  const avg = w.days.reduce((s, d) => s + mosquitoScoreForDay(d), 0) / w.days.length;
+  const level = avg < 1 ? 1 : avg < 2 ? 2 : avg < 3 ? 3 : avg < 4 ? 4 : 5;
+  const labels = { 1: "Minimal", 2: "Low", 3: "Moderate", 4: "High", 5: "Severe" };
+  const colors = { 1: "#4caf50", 2: "#8bc34a", 3: "#ff9800", 4: "#f44336", 5: "#9c27b0" };
+  const bars   = { 1: "█░░░░", 2: "██░░░", 3: "███░░", 4: "████░", 5: "█████" };
+  return { level, label: labels[level], color: colors[level], bar: bars[level], score: avg };
+}
+
+function mosquitoPopupHtml(parkId) {
+  const r = mosquitoRating(parkId);
+  if (!r) return "";
+  return `
+    <div style="margin-top:8px;border-top:1px solid #e0e0e0;padding-top:6px">
+      <div style="font-size:11px;font-weight:600;color:#616161;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Mosquito Activity</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:18px">🦟</span>
+        <div>
+          <span style="font-size:13px;font-weight:700;color:${r.color}">${r.label}</span>
+          <span style="font-size:11px;color:#9e9e9e;margin-left:6px;font-family:monospace">${r.bar}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function fetchWeather(from, to) {
+  const params = new URLSearchParams({ from, to });
+  const res    = await fetch(`/api/weather?${params}`);
+  const data   = await res.json();
+  weatherData  = {};
+  data.forEach(p => { weatherData[p.park_id] = p; });
+  updateMapMarkers();
+}
+
+function weatherSummaryForPark(parkId) {
+  const w = weatherData[parkId];
+  if (!w || !w.days.length) return null;
+  const days = w.days;
+  // Representative day (first day, or aggregate)
+  const maxTemp = Math.max(...days.map(d => d.temp_max));
+  const minTemp = Math.min(...days.map(d => d.temp_min));
+  const totalPrecip = days.reduce((s, d) => s + (d.precip || 0), 0);
+  const maxWind = Math.max(...days.map(d => d.wind));
+  // Most common weather code (mode)
+  const codeCount = {};
+  days.forEach(d => { codeCount[d.code] = (codeCount[d.code] || 0) + 1; });
+  const dominantCode = +Object.entries(codeCount).sort((a,b) => b[1]-a[1])[0][0];
+  return { maxTemp, minTemp, totalPrecip, maxWind, dominantCode, days };
+}
+
+function weatherMarkerLabel(parkId) {
+  const s = weatherSummaryForPark(parkId);
+  if (!s) return "";
+  return `${wmoEmoji(s.dominantCode)} ${Math.round(s.maxTemp)}°`;
+}
+
+function weatherPopupHtml(parkId) {
+  const w = weatherData[parkId];
+  if (!w || !w.days.length) return "";
+  const rows = w.days.map(d => `
+    <tr>
+      <td style="padding:3px 6px;white-space:nowrap">${d.date}</td>
+      <td style="padding:3px 6px;text-align:center">${wmoEmoji(d.code)}</td>
+      <td style="padding:3px 6px;white-space:nowrap">↑${Math.round(d.temp_max)}° ↓${Math.round(d.temp_min)}°</td>
+      <td style="padding:3px 6px;white-space:nowrap">${d.precip > 0 ? `💧${d.precip.toFixed(1)}mm` : "—"}</td>
+      <td style="padding:3px 6px;white-space:nowrap">💨${Math.round(d.wind)} km/h</td>
+    </tr>`).join("");
+  return `
+    <div style="margin-top:8px;border-top:1px solid #e0e0e0;padding-top:6px">
+      <div style="font-size:11px;font-weight:600;color:#616161;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Forecast</div>
+      <table style="font-size:11px;border-collapse:collapse;width:100%">
+        <thead><tr style="color:#9e9e9e">
+          <th style="padding:2px 6px;text-align:left">Date</th>
+          <th style="padding:2px 6px"></th>
+          <th style="padding:2px 6px;text-align:left">Temp</th>
+          <th style="padding:2px 6px;text-align:left">Precip</th>
+          <th style="padding:2px 6px;text-align:left">Wind</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", async () => {
+  initMap();
+  setDefaultDates();
+  const today = new Date().toISOString().split("T")[0];
+  await Promise.all([loadParks(), loadSiteTypes(), fetchWeather(today, today)]);
+  hookUI();
+  checkScraperStatus();
+  checkCookieStatus();
+});
+
+// ─── Map ──────────────────────────────────────────────────────────────────────
+function initMap() {
+  map = L.map("map").setView([47.5, -71.5], 6);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap contributors", maxZoom: 18,
+  }).addTo(map);
+}
+
+function markerColor(park) {
+  if (park.avail_dates > 10) return "#2e7d32";
+  if (park.avail_dates > 0)  return "#8bc34a";
+  return "#9e9e9e";
+}
+
+function makeIcon(color, weatherLabel = "") {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36">
+    <ellipse cx="14" cy="34" rx="6" ry="2" fill="rgba(0,0,0,.2)"/>
+    <path d="M14 1C8.477 1 4 5.477 4 11c0 7.75 10 23 10 23S24 18.75 24 11C24 5.477 19.523 1 14 1z"
+          fill="${color}" stroke="white" stroke-width="1.5"/>
+    <circle cx="14" cy="11" r="4.5" fill="white" opacity=".9"/>
+  </svg>`;
+  const label = weatherLabel
+    ? `<div style="position:absolute;top:34px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.95);border:1px solid #ddd;border-radius:4px;font-size:10px;font-weight:600;padding:1px 5px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.2);pointer-events:none">${weatherLabel}</div>`
+    : "";
+  const html = `<div style="position:relative;width:28px">${svg}${label}</div>`;
+  return L.divIcon({
+    html,
+    className: "",
+    iconSize:    [28, weatherLabel ? 56 : 36],
+    iconAnchor:  [14, 34],
+    popupAnchor: [0, -34],
+  });
+}
+
+function updateMapMarkers() {
+  Object.values(markers).forEach(m => m.remove());
+  markers = {};
+  const visibleParks = mapFilteredParkIds !== null
+    ? parks.filter(p => mapFilteredParkIds.has(p.id))
+    : parks;
+  const hiddenParks = mapFilteredParkIds !== null
+    ? parks.filter(p => !mapFilteredParkIds.has(p.id))
+    : [];
+
+  // Greyed-out markers for parks outside the filter
+  hiddenParks.forEach(park => {
+    if (!park.lat || !park.lon) return;
+    const wLabel = weatherMarkerLabel(park.id);
+    const marker = L.marker([park.lat, park.lon], {
+      icon: makeIcon("#cccccc", wLabel), opacity: 0.45
+    }).addTo(map);
+    marker.bindPopup(`<div style="min-width:200px;color:#999">
+      <div style="font-weight:600;font-size:13px;margin-bottom:4px;color:#555">${park.name}</div>
+      <span style="font-size:12px">No availability for selected dates</span>
+      ${mosquitoPopupHtml(park.id)}
+      ${weatherPopupHtml(park.id)}
+    </div>`);
+    markers[park.id] = marker;
+  });
+
+  visibleParks.forEach(park => {
+    if (!park.lat || !park.lon) return;
+    const wLabel = weatherMarkerLabel(park.id);
+    const marker = L.marker([park.lat, park.lon], { icon: makeIcon(markerColor(park), wLabel) }).addTo(map);
+    const sectors = park.sector_count > 0
+      ? `<div style="font-size:12px;color:#555;margin-top:2px">${park.sector_count} sector${park.sector_count!==1?'s':''}</div>`
+      : "";
+    const availText = park.avail_dates > 0
+      ? `<strong style="color:#2e7d32">${park.avail_dates} ${park.use_range ? "nights" : "dates"} available</strong>`
+      : `<span style="color:#9e9e9e">No availability in next 30 days</span>`;
+    const priceText = park.min_price
+      ? `<div style="font-size:12px;margin-top:2px;color:#555">from $${park.min_price.toFixed(2)}/night</div>`
+      : "";
+    marker.bindPopup(`
+      <div style="min-width:200px">
+        <div style="font-weight:600;font-size:13px;margin-bottom:6px">${park.name}</div>
+        ${availText}${priceText}${sectors}
+        <div style="margin-top:8px">
+          <a href="#" onclick="openParkBrowse(${park.id});return false"
+             style="font-size:12px;color:#2e7d32;font-weight:600">Browse availability →</a>
+        </div>
+        ${mosquitoPopupHtml(park.id)}
+        ${weatherPopupHtml(park.id)}
+      </div>`);
+    marker.bindTooltip(shortParkName(park.name), {
+      permanent: true, direction: "top", className: "park-name-label", offset: [0, -32]
+    });
+    marker.on("click", () => selectPark(park.id));
+    markers[park.id] = marker;
+  });
+}
+
+async function loadSiteTypes() {
+  const res   = await fetch("/api/site-types");
+  const types = await res.json();
+  const sel   = document.getElementById("mapSiteType");
+  types.forEach(t => {
+    const opt = document.createElement("option");
+    opt.value = t; opt.textContent = t;
+    sel.appendChild(opt);
+  });
+}
+
+async function applyMapFilter() {
+  const from     = document.getElementById("mapFrom").value;
+  const to       = document.getElementById("mapTo").value;
+  const siteType = document.getElementById("mapSiteType").value;
+  const countEl  = document.getElementById("mapResultCount");
+  if (!from || !to) { countEl.textContent = "Select both dates."; return; }
+  if (from >= to)   { countEl.textContent = "Check-out must be after check-in."; return; }
+  countEl.textContent = "Filtering…";
+  const params = new URLSearchParams({ from, to });
+  if (siteType) params.set("site_type", siteType);
+  const [searchRes] = await Promise.all([
+    fetch(`/api/search?${params}`),
+    fetchWeather(from, to),
+  ]);
+  const data = await searchRes.json();
+  mapFilteredParkIds = new Set(data.map(p => p.id));
+  const label = siteType ? ` (${siteType})` : "";
+  countEl.textContent = `${mapFilteredParkIds.size} park${mapFilteredParkIds.size!==1?'s':''} available${label}`;
+  updateMapMarkers();
+}
+
+async function clearMapFilter() {
+  mapFilteredParkIds = null;
+  document.getElementById("mapFrom").value = "";
+  document.getElementById("mapTo").value   = "";
+  document.getElementById("mapSiteType").value = "";
+  document.getElementById("mapResultCount").textContent = "";
+  const today = new Date().toISOString().split("T")[0];
+  await fetchWeather(today, today);
+}
+
+// ─── Parks ────────────────────────────────────────────────────────────────────
+async function loadParks() {
+  const res = await fetch("/api/parks");
+  parks = await res.json();
+  renderParkList();
+  updateMapMarkers();
+}
+
+function renderParkList() {
+  const el = document.getElementById("parkList");
+  if (!parks.length) { el.innerHTML = `<div class="no-data" style="padding:16px">No parks found.</div>`; return; }
+  el.innerHTML = parks.map(p => {
+    const availLabel = p.use_range
+      ? (p.avail_dates > 0 ? `${p.avail_dates} nights available` : "No availability (30 days)")
+      : (p.avail_dates > 0 ? `${p.avail_dates} dates open` : "No availability");
+    const badge = p.avail_dates > 0
+      ? `<span class="avail-badge has">${availLabel}</span>`
+      : `<span class="avail-badge none">${availLabel}</span>`;
+    const sec = p.sector_count > 0
+      ? `${p.sector_count} sector${p.sector_count!==1?'s':''} · ` : "";
+    return `<div class="park-item" data-id="${p.id}" onclick="selectPark(${p.id})">
+      <div class="park-name">${p.name}</div>
+      <div class="park-meta">${sec}scraped ${p.scraped_at ? p.scraped_at.slice(0,10) : '—'}</div>
+      ${badge}
+    </div>`;
+  }).join("");
+}
+
+function selectPark(id) {
+  selectedParkId = id;
+  selectedSectorId = null;
+  document.querySelectorAll(".park-item").forEach(el =>
+    el.classList.toggle("selected", +el.dataset.id === id));
+  if (activeTab === "map" && markers[id]) markers[id].openPopup();
+}
+
+function openParkBrowse(id) {
+  selectPark(id);
+  switchTab("browse");
+  loadParkSectors(id);
+}
+
+// ─── Browse helpers ────────────────────────────────────────────────────────────
+function _setMapPanel(html) {
+  document.getElementById("browseMapInner").innerHTML = html;
+}
+function _setContentPanel(html) {
+  document.getElementById("browseInner").innerHTML = html;
+}
+
+// ─── Browse — Park level (sector list) ────────────────────────────────────────
+async function loadParkSectors(parkId) {
+  // Clean up previous event listeners and selections before loading
+  detachMapHighlighting();
+  clearSelection();
+
+  _setContentPanel(`<div class="loading">Loading sectors…</div>`);
+  _setMapPanel(`<div class="loading" style="margin:20px">Loading map…</div>`);
+
+  const res  = await fetch(`/api/parks/${parkId}/sectors`);
+  const data = await res.json();
+  if (data.error) { _setContentPanel(`<div class="no-data">${data.error}</div>`); return; }
+
+  const park    = data.park;
+  const sectors = data.sectors;
+  const parkObj = parks.find(p => p.id === parkId) || {};
+
+  // Left panel: park schematic map from SEPAQ S3 (if available) or Leaflet placeholder
+  if (parkObj.park_map_url) {
+    _setMapPanel(`
+      <div style="padding:10px 12px 6px;font-size:11px;font-weight:600;color:var(--soft);text-transform:uppercase;letter-spacing:.05em">${park.name}</div>
+      <div class="site-map-wrap" style="margin:0 12px 12px">
+        <img src="${parkObj.park_map_url}" alt="${park.name} map" style="border-radius:var(--radius);border:1px solid var(--border)">
+      </div>`);
+  } else {
+    _setMapPanel(`<div style="padding:20px;color:var(--soft);font-size:13px">Map not available yet — run the scraper to generate it.</div>`);
+  }
+
+  if (sectors.length === 0) {
+    _setContentPanel(`
+      <div class="breadcrumb"><span>${park.name}</span></div>
+      <div class="park-title">${park.name}</div>
+      <div class="browse-empty" style="margin-top:40px">
+        🏕 No camping reservations at this park.<br>
+        <span style="font-size:13px;color:var(--soft)">This park doesn't offer bookable campsites through SEPAQ reservations.</span>
+      </div>`);
+    return;
+  }
+
+  const cards = sectors.map(s => {
+    const avail = s.avail_dates > 0
+      ? `<div class="sc-avail">${s.avail_dates} available dates</div>
+         ${s.max_sites ? `<div class="sc-avail">up to ${s.max_sites} sites/day</div>` : ""}`
+      : `<div class="sc-none">No availability in 90 days</div>`;
+    const price = s.min_price != null
+      ? `<div class="sc-price">from $${(+s.min_price).toFixed(2)}/night</div>` : "";
+    return `<div class="sector-card" onclick="openSectorAvail(${s.id}, ${park.id})">
+      <div class="sc-name">${s.name}</div>
+      ${avail}${price}
+    </div>`;
+  }).join("");
+
+  _setContentPanel(`
+    <div class="breadcrumb"><span>${park.name}</span></div>
+    <div class="park-title">${park.name}</div>
+    <div class="park-sub">${sectors.length} campground sector${sectors.length!==1?'s':''}</div>
+    <div class="sector-grid">${cards}</div>`);
+}
+
+// ─── Browse — Sector level ─────────────────────────────────────────────────────
+
+async function openSectorAvail(sectorId, parkId) {
+  selectedSectorId = sectorId;
+  // Prefer map filter dates; fall back to browse date inputs; fall back to today + 90 days
+  const mapFrom   = document.getElementById("mapFrom").value;
+  const mapTo     = document.getElementById("mapTo").value;
+  const browseFrom = document.getElementById("browseFrom")?.value;
+  const browseTo   = document.getElementById("browseTo")?.value;
+  const today = new Date().toISOString().split("T")[0];
+  const in90  = new Date(Date.now() + 90*86400000).toISOString().split("T")[0];
+  const from  = mapFrom || browseFrom || today;
+  const to    = mapTo   || browseTo   || in90;
+  await openSectorRangeAvail(sectorId, parkId, from, to);
+}
+
+async function openSectorRangeAvail(sectorId, parkId, from, to) {
+  // Clean up previous event listeners before loading new content
+  detachMapHighlighting();
+  clearSelection();
+
+  _setContentPanel(`<div class="loading">Checking live availability ${from} → ${to}…</div>`);
+  _setMapPanel(`<div class="loading" style="margin:20px">Fetching site positions…</div>`);
+
+  const params = new URLSearchParams({ from, to, available_only: "0" }); // get all sites for map
+
+  const res  = await fetch(`/api/sectors/${sectorId}/live-sites?${params}`);
+  const data = await res.json();
+  if (data.error) { _setContentPanel(`<div class="no-data">${data.error}</div>`); return; }
+
+  const park       = parks.find(p => p.id === parkId) || { name: data.sites[0]?.park_name || "", id: parkId };
+  const sectorName = data.sites[0]?.sector_name || "";
+  const sepaqHref  = data.sepaq_url || "#";
+  const nights     = Math.round((new Date(to) - new Date(from)) / 86400000);
+  const nightsTxt  = `${nights} night${nights !== 1 ? "s" : ""}`;
+
+  if (!data.has_cookies) {
+    _setContentPanel(`<div class="browse-empty" style="margin-top:30px">
+      No cookies found. Run <code>python scraper/get_cookie.py</code> to refresh.
+    </div>`);
+    _setMapPanel('');
+    return;
+  }
+
+  // Group ALL sites (available and not) by boucle for the map
+  const boucleGroups = {};
+  data.sites.forEach(s => {
+    const b = s.boucle || "sites";
+    if (!boucleGroups[b]) boucleGroups[b] = { map_url: s.boucle_map_url || "", sites: [] };
+    boucleGroups[b].sites.push(s);
+  });
+
+  const boucleNames  = Object.keys(boucleGroups);
+  const multipleB    = boucleNames.length > 1;
+  let   activeBoucle = boucleNames[0] || "";
+
+  // ── Build left map panel ──────────────────────────────────────────────────
+  function renderMapPanel(boucleName) {
+    const grp = boucleGroups[boucleName];
+    if (!grp) return;
+    const label = boucleName.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+
+    const tabs = multipleB ? `<div class="boucle-tabs">
+      ${boucleNames.map(n => {
+        const lbl = n.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+        return `<button class="boucle-tab${n === boucleName ? ' active' : ''}"
+                        onclick="switchBoucle('${n}', ${sectorId}, ${parkId})">${lbl}</button>`;
+      }).join("")}
+    </div>` : "";
+
+    const DOT_CLR = { green: "dot-green", yellow: "dot-yellow", red: "dot-red" };
+
+    // Render ALL sites with positions (not just available ones)
+    const dots = grp.map_url ? grp.sites
+      .filter(s => s.x_pct != null && s.y_pct != null)
+      .map(s => {
+        const cls  = DOT_CLR[s.colour] || "dot-unknown";
+        const name = s.site_name ? s.site_name.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : `Unit ${s.unit_id}`;
+        const price = s.price != null ? ` · $${s.price.toFixed(0)}` : "";
+        const bookUrl = s.url ? `https://www.sepaq.com${s.url.startsWith("/") ? s.url : "/" + s.url}` : "#";
+        return `<div class="map-dot ${cls}" data-unit-id="${s.unit_id}"
+                    style="left:${s.x_pct}%;top:${s.y_pct}%"
+                    title="${name}${price}"
+                    onclick="window.open('${bookUrl}', '_blank'); return false;"
+                    data-booking-url="${bookUrl}">
+                  <div class="map-dot-tip">${name}${price}</div>
+                </div>`;
+      }).join("") : "";
+
+    // Count sites by colour for legend
+    const sitesByColour = { green: 0, yellow: 0, red: 0 };
+    grp.sites.forEach(s => {
+      if (s.colour && sitesByColour.hasOwnProperty(s.colour)) sitesByColour[s.colour]++;
+    });
+    const legendHtml = grp.map_url ? `<div class="site-map-legend">
+      <div class="legend-item">
+        <div class="legend-dot available"></div>
+        <span>Available${sitesByColour.green > 0 ? ` (${sitesByColour.green})` : ""}</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot partial"></div>
+        <span>Partial${sitesByColour.yellow > 0 ? ` (${sitesByColour.yellow})` : ""}</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot full"></div>
+        <span>Full${sitesByColour.red > 0 ? ` (${sitesByColour.red})` : ""}</span>
+      </div>
+    </div>` : "";
+
+    const mapHtml = grp.map_url
+      ? `<div class="site-map-wrap">
+           <div class="site-map-container">
+             <img src="${grp.map_url}" alt="${label}">
+             ${dots}
+           </div>
+           ${legendHtml}
+         </div>`
+      : `<div style="padding:16px;color:var(--soft);font-size:13px">
+           <strong>Map not available</strong><br>
+           This boucle doesn't have a schematic map. Try selecting a different boucle or check back later.
+         </div>`;
+
+    const mapInner = document.getElementById("browseMapInner");
+    mapInner.innerHTML = tabs + mapHtml;
+    attachMapHighlighting();
+  }
+
+  window._boucleGroups  = boucleGroups;
+  window._sectorSectorId = sectorId;
+  window._sectorParkId   = parkId;
+  window._activeBoucle   = activeBoucle;  // Track for breadcrumb
+  window._sectorData = { sectorName, sectorId, parkId, park, from, to, nightsTxt };
+  renderMapPanel(activeBoucle);
+
+  // ── Build right cards panel (available sites only) ────────────────────────
+  _browseSites = data.sites.filter(s => s.available || s.partial);
+
+  const COLOUR = { green: "var(--green)", yellow: "#f57c00", red: "#c62828" };
+  const LABEL  = { green: "Available", yellow: "Partial", red: "Full" };
+
+  const boucleHtml = boucleNames.map(bName => {
+    const grp      = boucleGroups[bName];
+    const avail    = grp.sites.filter(s => s.available || s.partial);
+    if (!avail.length) return "";
+    const boucleName = bName.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+
+    const siteCards = avail.map(s => {
+      const colour  = COLOUR[s.colour] || "var(--grey)";
+      const label   = LABEL[s.colour]  || s.colour;
+      const price   = s.price != null ? `$${s.price.toFixed(2)}/night` : "";
+      const siteNum = s.site_name ? s.site_name.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : `Unit ${s.unit_id}`;
+      const bookUrl = s.url ? `https://www.sepaq.com${s.url.startsWith("/") ? s.url : "/" + s.url}` : sepaqHref;
+      return `<div class="sector-card browse-site-card" data-site-type="${s.site_type || ""}"
+                   data-unit-id="${s.unit_id}" style="cursor:default;border-left:3px solid ${colour};padding-top:0">
+        <div class="site-card-photo-wrap">
+          <img class="site-card-photo lazy-photo" data-unit-id="${s.unit_id}"
+               src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+               alt="${siteNum}" loading="lazy">
+        </div>
+        <div style="padding-top:10px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div class="sc-name">${siteNum}</div>
+            <span style="font-size:11px;font-weight:600;color:${colour}">${label}</span>
+          </div>
+          <div style="font-size:11px;color:var(--soft);margin:3px 0 6px">${s.site_type || ""}</div>
+          ${price ? `<div class="sc-price">${price}</div>` : ""}
+          <div style="margin-top:8px">
+            <a class="book-link" href="${bookUrl}" target="_blank" rel="noopener">Book on SEPAQ →</a>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+
+    return `<div class="browse-boucle-section" style="margin-bottom:20px">
+      ${multipleB ? `<div style="font-size:11px;font-weight:600;color:var(--soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">${boucleName}</div>` : ""}
+      <div class="sector-grid">${siteCards}</div>
+    </div>`;
+  }).join("");
+
+  const availCount = _browseSites.length;
+  const empty = availCount === 0
+    ? `<div class="browse-empty" style="margin-top:30px">No available sites for ${nightsTxt}.<br>
+        <span style="font-size:13px;color:var(--soft)">Try different dates or a different site type.</span></div>`
+    : "";
+
+  _setContentPanel(`
+    <div class="breadcrumb">
+      <a onclick="openParkBrowse(${parkId});return false">${park.name}</a>
+      <span class="sep">›</span><span>${sectorName}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div class="park-title">${sectorName}</div>
+        <div class="park-sub">${park.name} · ${nightsTxt} (${from} → ${to}) · ${availCount} site${availCount !== 1 ? "s" : ""} available</div>
+      </div>
+      <a class="btn" href="${sepaqHref}" target="_blank" rel="noopener" style="text-decoration:none;font-size:13px">Book on SEPAQ ↗</a>
+    </div>
+    <div class="filter-row">
+      <label>Check-in</label><input type="date" id="browseFrom" value="${from}">
+      <label>Check-out</label><input type="date" id="browseTo" value="${to}">
+      <button class="btn" onclick="openSectorAvail(${sectorId},${parkId})">Apply</button>
+      <label style="margin-left:8px">Site type</label>
+      <select id="browseSiteType" onchange="filterBrowseSiteType()"
+              style="border:1px solid var(--border);border-radius:var(--radius);padding:5px 10px;font-size:13px">
+        <option value="">All types</option>
+        ${[...new Set(data.sites.map(s => s.site_type).filter(Boolean))].sort()
+          .map(t => `<option value="${t}">${t}</option>`).join("")}
+      </select>
+    </div>
+    ${empty}${boucleHtml}`);
+
+  loadSitePhotos();
+}
+
+function switchBoucle(boucleName, sectorId, parkId) {
+  // Re-render just the map panel for the selected boucle
+  const boucleGroups = window._boucleGroups || {};
+  const boucleNames  = Object.keys(boucleGroups);
+  const multipleB    = boucleNames.length > 1;
+  const grp = boucleGroups[boucleName];
+  if (!grp) return;
+  const label = boucleName.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+
+  // Update global state to track active boucle
+  window._activeBoucle = boucleName;
+
+  const tabs = multipleB ? `<div class="boucle-tabs">
+    ${boucleNames.map(n => {
+      const lbl = n.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+      return `<button class="boucle-tab${n === boucleName ? ' active' : ''}"
+                      onclick="switchBoucle('${n}', ${sectorId}, ${parkId})">${lbl}</button>`;
+    }).join("")}
+  </div>` : "";
+
+  const DOT_CLR = { green: "dot-green", yellow: "dot-yellow", red: "dot-red" };
+
+  // Render ALL sites with positions (not just available ones)
+  const dots = grp.map_url ? grp.sites
+    .filter(s => s.x_pct != null && s.y_pct != null)
+    .map(s => {
+      const cls  = DOT_CLR[s.colour] || "dot-unknown";
+      const name = s.site_name ? s.site_name.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : `Unit ${s.unit_id}`;
+      const price = s.price != null ? ` · $${s.price.toFixed(0)}` : "";
+      const bookUrl = s.url ? `https://www.sepaq.com${s.url.startsWith("/") ? s.url : "/" + s.url}` : "#";
+      return `<div class="map-dot ${cls}" data-unit-id="${s.unit_id}"
+                  style="left:${s.x_pct}%;top:${s.y_pct}%"
+                  title="${name}${price}"
+                  onclick="window.open('${bookUrl}', '_blank'); return false;"
+                  data-booking-url="${bookUrl}">
+                <div class="map-dot-tip">${name}${price}</div>
+              </div>`;
+    }).join("") : "";
+
+  // Count sites by colour for legend
+  const sitesByColour = { green: 0, yellow: 0, red: 0 };
+  grp.sites.forEach(s => {
+    if (s.colour && sitesByColour.hasOwnProperty(s.colour)) sitesByColour[s.colour]++;
+  });
+  const legendHtml = grp.map_url ? `<div class="site-map-legend">
+    <div class="legend-item">
+      <div class="legend-dot available"></div>
+      <span>Available${sitesByColour.green > 0 ? ` (${sitesByColour.green})` : ""}</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot partial"></div>
+      <span>Partial${sitesByColour.yellow > 0 ? ` (${sitesByColour.yellow})` : ""}</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot full"></div>
+      <span>Full${sitesByColour.red > 0 ? ` (${sitesByColour.red})` : ""}</span>
+    </div>
+  </div>` : "";
+
+  const mapHtml = grp.map_url
+    ? `<div class="site-map-wrap">
+         <div class="site-map-container">
+           <img src="${grp.map_url}" alt="${label}">
+           ${dots}
+         </div>
+         ${legendHtml}
+       </div>`
+    : `<div style="padding:16px;color:var(--soft);font-size:13px">
+         <strong>Map not available</strong><br>
+         This boucle doesn't have a schematic map. Try selecting a different boucle or check back later.
+       </div>`;
+
+  const mapPanel = document.getElementById("browseMapInner");
+  if (mapPanel) {
+    mapPanel.innerHTML = tabs + mapHtml;
+    clearSelection();  // Clear sticky selection when switching boucles
+    attachMapHighlighting();
+  }
+}
+
+// Track selected site for sticky highlighting
+let selectedUnitId = null;
+
+function clearSelection() {
+  if (selectedUnitId) {
+    document.querySelector(`.map-dot[data-unit-id="${selectedUnitId}"]`)?.classList.remove('hovered');
+    document.querySelector(`.browse-site-card[data-unit-id="${selectedUnitId}"]`)?.classList.remove('hovered');
+    selectedUnitId = null;
+  }
+}
+
+// Store reference to global click handler for cleanup
+let _globalClickHandler = null;
+
+function detachMapHighlighting() {
+  // Remove stored global click handler
+  if (_globalClickHandler) {
+    document.removeEventListener('click', _globalClickHandler);
+    _globalClickHandler = null;
+  }
+}
+
+function attachMapHighlighting() {
+  // Clean up any previous event listeners first
+  detachMapHighlighting();
+
+  // Dot hover and click handlers
+  document.querySelectorAll('.map-dot').forEach(dot => {
+    dot.addEventListener('mouseenter', () => {
+      dot.classList.add('hovered');
+      const card = document.querySelector(`.browse-site-card[data-unit-id="${dot.dataset.unitId}"]`);
+      if (card) {
+        card.classList.add('hovered');
+        card.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+      }
+    });
+    dot.addEventListener('mouseleave', () => {
+      // Only remove if not selected
+      if (dot.dataset.unitId !== selectedUnitId) {
+        dot.classList.remove('hovered');
+        document.querySelector(`.browse-site-card[data-unit-id="${dot.dataset.unitId}"]`)?.classList.remove('hovered');
+      }
+    });
+    // Click to select (sticky highlight)
+    dot.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (selectedUnitId === dot.dataset.unitId) {
+        clearSelection();
+      } else {
+        clearSelection();
+        selectedUnitId = dot.dataset.unitId;
+        dot.classList.add('hovered');
+        const card = document.querySelector(`.browse-site-card[data-unit-id="${selectedUnitId}"]`);
+        if (card) {
+          card.classList.add('hovered');
+          card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+    });
+  });
+
+  // Card hover and click handlers
+  document.querySelectorAll('.browse-site-card[data-unit-id]').forEach(card => {
+    card.addEventListener('mouseenter', () => {
+      card.classList.add('hovered');
+      const dot = document.querySelector(`.map-dot[data-unit-id="${card.dataset.unitId}"]`);
+      if (dot) dot.classList.add('hovered');
+    });
+    card.addEventListener('mouseleave', () => {
+      // Only remove if not selected
+      if (card.dataset.unitId !== selectedUnitId) {
+        card.classList.remove('hovered');
+        document.querySelector(`.map-dot[data-unit-id="${card.dataset.unitId}"]`)?.classList.remove('hovered');
+      }
+    });
+    // Click to select (sticky highlight)
+    card.addEventListener('click', (e) => {
+      // Don't interfere with actual links
+      if (e.target.tagName === 'A') return;
+      e.stopPropagation();
+      if (selectedUnitId === card.dataset.unitId) {
+        clearSelection();
+      } else {
+        clearSelection();
+        selectedUnitId = card.dataset.unitId;
+        card.classList.add('hovered');
+        const dot = document.querySelector(`.map-dot[data-unit-id="${selectedUnitId}"]`);
+        if (dot) {
+          dot.classList.add('hovered');
+          // Scroll map into view if available
+          dot.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+    });
+  });
+
+  // Click anywhere else to deselect — store handler for cleanup
+  _globalClickHandler = (e) => {
+    if (!e.target.closest('.map-dot') && !e.target.closest('.browse-site-card')) {
+      clearSelection();
+    }
+  };
+  document.addEventListener('click', _globalClickHandler);
+}
+
+async function loadSitePhotos() {
+  const imgs = [...document.querySelectorAll('.lazy-photo[data-unit-id]')];
+  if (!imgs.length) return;
+  const unitIds = [...new Set(imgs.map(i => i.dataset.unitId))];
+  // Batch in groups of 20 to avoid huge query strings
+  for (let i = 0; i < unitIds.length; i += 20) {
+    const batch = unitIds.slice(i, i + 20);
+    try {
+      const res  = await fetch(`/api/site-photos?unit_ids=${batch.join(',')}`);
+      const data = await res.json();
+      imgs.filter(img => batch.includes(img.dataset.unitId)).forEach(img => {
+        const val = data[img.dataset.unitId];
+        if (!val) { img.closest('.site-card-photo-wrap').style.display = 'none'; return; }
+        // "cached" means a local BLOB exists; otherwise val is the direct CDN URL
+        const src = (val === 'cached')
+          ? `/api/site-photo-img/${img.dataset.unitId}`
+          : val;
+        img.onerror = () => img.closest('.site-card-photo-wrap').style.display = 'none';
+        img.src = src;
+        const caption = img.closest('.browse-site-card')?.querySelector('.sc-name')?.textContent || '';
+        img.onclick = () => openLightbox(src, caption);
+      });
+    } catch {}
+  }
+}
+
+// ─── Lightbox ─────────────────────────────────────────────────────────────────
+function openLightbox(src, caption) {
+  const lb  = document.getElementById('lightbox');
+  const img = document.getElementById('lightbox-img');
+  const cap = document.getElementById('lightbox-caption');
+  // If src is our local endpoint, use it directly (already full quality).
+  // If it's a SEPAQ CDN thumbnail URL, try the full-size version first.
+  if (src.startsWith('/api/')) {
+    img.src = src;
+    img.onerror = null;
+  } else {
+    const fullSrc = src.replace(/\/thr(\d+_)/, '/r$1').replace(/\/thimg(\d+_)/, '/img$1');
+    img.src = fullSrc;
+    img.onerror = () => { img.src = src; img.onerror = null; };
+  }
+  cap.textContent = caption || '';
+  lb.classList.add('open');
+  document.addEventListener('keydown', _lbKeyHandler);
+}
+
+function closeLightbox(e) {
+  if (e && e.target === document.getElementById('lightbox-img')) return; // click on image = no-op
+  document.getElementById('lightbox').classList.remove('open');
+  document.getElementById('lightbox-img').src = '';
+  document.removeEventListener('keydown', _lbKeyHandler);
+}
+
+function _lbKeyHandler(e) { if (e.key === 'Escape') closeLightbox(); }
+
+function filterBrowseSiteType() {
+  const filter = document.getElementById("browseSiteType")?.value.toLowerCase() || "";
+  const cards  = document.querySelectorAll(".browse-site-card");
+  cards.forEach(card => {
+    const type = (card.dataset.siteType || "").toLowerCase();
+    card.style.display = (!filter || type.includes(filter)) ? "" : "none";
+  });
+  // Show/hide boucle sections if all their cards are hidden
+  document.querySelectorAll(".browse-boucle-section").forEach(sec => {
+    const visible = [...sec.querySelectorAll(".browse-site-card")]
+      .some(c => c.style.display !== "none");
+    sec.style.display = visible ? "" : "none";
+  });
+}
+
+async function openSectorDailyAvail(sectorId, parkId) {
+  const inner = document.getElementById("browseInner");
+  inner.innerHTML = `<div class="loading">Loading availability…</div>`;
+
+  const fromEl = document.getElementById("browseFrom");
+  const toEl   = document.getElementById("browseTo");
+  const from   = fromEl ? fromEl.value : "";
+  const to     = toEl   ? toEl.value   : "";
+  const params = new URLSearchParams();
+  if (from) params.set("from", from);
+  if (to)   params.set("to", to);
+
+  const res  = await fetch(`/api/sectors/${sectorId}/availability?${params}`);
+  const data = await res.json();
+  if (data.error) { inner.innerHTML = `<div class="no-data">${data.error}</div>`; return; }
+
+  const sector    = data.sector;
+  const park      = parks.find(p => p.id === parkId) || { name: sector.park_name, id: parkId };
+  const today     = new Date().toISOString().split("T")[0];
+  const in90      = new Date(Date.now() + 90*86400000).toISOString().split("T")[0];
+  const sepaqHref = sector.sepaq_url;
+
+  const tableRows = data.dates.length === 0
+    ? `<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--soft)">
+         No availability data for this period.</td></tr>`
+    : data.dates.map(d => {
+        const avail    = (d.sites_available || 0) > 0;
+        const siteTxt  = avail ? `${d.sites_available} site${d.sites_available!==1?'s':''} open` : "Full";
+        const priceTxt = d.min_price != null ? `$${(+d.min_price).toFixed(2)}` : "—";
+        const bookBtn  = avail
+          ? `<a class="book-link" href="${sepaqHref}" target="_blank" rel="noopener">Book on SEPAQ →</a>`
+          : `<span style="color:var(--grey);font-size:12px">—</span>`;
+        return `<tr>
+          <td>${d.date}</td>
+          <td>${avail ? `<span class="pill avail">${siteTxt}</span>` : `<span class="pill unavail">Full</span>`}</td>
+          <td>${priceTxt}</td>
+          <td>${bookBtn}</td>
+        </tr>`;
+      }).join("");
+
+  inner.innerHTML = `
+    <div class="breadcrumb">
+      <a onclick="openParkBrowse(${parkId});return false">${park.name}</a>
+      <span class="sep">›</span>
+      <span>${sector.name}</span>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="park-title">${sector.name}</div>
+        <div class="park-sub">${sector.park_name}</div>
+      </div>
+      <a class="btn" href="${sepaqHref}" target="_blank" rel="noopener"
+         style="text-decoration:none;font-size:13px">Book on SEPAQ ↗</a>
+    </div>
+
+    <div class="filter-row">
+      <label>From</label>
+      <input type="date" id="browseFrom" value="${today}" />
+      <label>To</label>
+      <input type="date" id="browseTo"   value="${in90}" />
+      <button class="btn" onclick="openSectorDailyAvail(${sectorId},${parkId})">Apply</button>
+    </div>
+
+    <div class="avail-table-wrap">
+      <table>
+        <thead>
+          <tr><th>Date</th><th>Availability</th><th>Min price</th><th>Book</th></tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>`;
+}
+
+// ─── Browse — park-level fallback ─────────────────────────────────────────────
+async function loadParkAvailability(parkId, park) {
+  const today = new Date().toISOString().split("T")[0];
+  const in90  = new Date(Date.now() + 90*86400000).toISOString().split("T")[0];
+  const res   = await fetch(`/api/parks/${parkId}/availability?from=${today}&to=${in90}`);
+  const data  = await res.json();
+  const inner = document.getElementById("browseInner");
+
+  const tableRows = (!data.dates || data.dates.length === 0)
+    ? `<tr><td colspan="3" style="text-align:center;padding:20px;color:var(--soft)">No data — run the scraper to fetch availability.</td></tr>`
+    : data.dates.map(d => {
+        const avail   = (d.sites_available || 0) > 0;
+        const siteTxt = avail ? `${d.sites_available} site${d.sites_available!==1?'s':''} open` : "Full";
+        const price   = d.min_price != null ? `$${(+d.min_price).toFixed(2)}` : "—";
+        return `<tr>
+          <td>${d.date}</td>
+          <td>${avail ? `<span class="pill avail">${siteTxt}</span>` : `<span class="pill unavail">Full</span>`}</td>
+          <td>${price}</td>
+        </tr>`;
+      }).join("");
+
+  inner.innerHTML += `
+    <div class="avail-table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Availability</th><th>Min price</th></tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>`;
+}
+
+// ─── Search ───────────────────────────────────────────────────────────────────
+async function runSearch() {
+  const from = document.getElementById("searchFrom").value;
+  const to   = document.getElementById("searchTo").value;
+  const el   = document.getElementById("searchResults");
+  if (!from || !to)  { el.innerHTML = `<div class="no-data">Select both dates.</div>`; return; }
+  if (from > to)     { el.innerHTML = `<div class="no-data">Check-in must be before check-out.</div>`; return; }
+
+  el.innerHTML = `<div class="loading">Searching…</div>`;
+  const res  = await fetch(`/api/search?from=${from}&to=${to}`);
+  const data = await res.json();
+
+  if (!data.length) {
+    el.innerHTML = `<div class="no-data">No availability found. Try a wider range or run the scraper.</div>`;
+    return;
+  }
+
+  el.innerHTML = `<div style="font-size:13px;font-weight:600;color:var(--soft);margin-bottom:12px">
+    ${data.length} park${data.length!==1?'s':''} with availability
+  </div>` + data.map(p => {
+    const price = p.min_price != null
+      ? `<div class="result-park-price">$${(+p.min_price).toFixed(2)}</div>
+         <div cla
