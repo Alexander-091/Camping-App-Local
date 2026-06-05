@@ -227,7 +227,7 @@ def fetch_detail(session: requests.Session, region_slug: str, slug: str) -> dict
 def load_db_campgrounds(conn) -> list[dict]:
     """Load all private_campgrounds as dicts for matching."""
     rows = conn.execute(
-        "SELECT id, name, lat, lon, phone, website, address, maps_url, email "
+        "SELECT id, name, lat, lon, phone, website, address, maps_url "
         "FROM private_campgrounds"
     ).fetchall()
     return [dict(r) for r in rows]
@@ -408,7 +408,6 @@ def main():
                     "name": title, "lat": cq_lat, "lon": cq_lon,
                     "phone": detail["phone"], "website": detail["website"],
                     "address": detail["address"], "maps_url": detail["maps_url"],
-                    "email": detail.get("email"),
                 })
             inserted += 1
 
