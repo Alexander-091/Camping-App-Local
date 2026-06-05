@@ -1,7 +1,8 @@
 # Milosevic Camp Planner — Functional PRD
 
-**Version:** 1.0
-**Date:** 2026-06-03
+**Version:** 1.1
+**Date:** 2026-06-05
+**Changelog:** v1.1 — Private campground enrichment pipeline; Camping Québec scraper; two-tier pin display.
 **Purpose:** Functional specification of the existing desktop app, written so it
 can be rebuilt as a production web app. This describes *what the app does and
 how*, including the non-obvious mechanics (live SEPAQ availability, schematic
@@ -87,10 +88,26 @@ each in its own session to avoid races):
   by `unit_id`, so the main DB stays lean.
 
 ### 2.4 Private campgrounds (secondary)
-- Sourced from **OpenStreetMap** via the **Overpass API** (`tourism=camp_site`),
-  not by scraping operators. Free, ODbL-licensed (requires attribution).
+- Primary source: **OpenStreetMap** via the **Overpass API** (`tourism=camp_site`),
+  free, ODbL-licensed (requires attribution).
 - Scope: Quebec + immediate neighbours (Ontario-east, NB/NS, NY/VT/ME).
 - SEPAQ-operated sites filtered out. Stored in a **separate `private.db`**.
+- Secondary source: **Camping Québec** (`campingquebec.com`) — the provincial
+  campground association. 826 member campgrounds scraped via their WordPress REST
+  API + static HTML detail pages (`scrape_campingquebec.py`). No API key required;
+  contact data (phone, address, website, Google Maps URL) is in server-rendered
+  HTML. Used to enrich OSM records and add new campgrounds not in OSM.
+- **Enrichment pipeline** (run order):
+  1. `fetch_osm_campgrounds.py --save` — fetch/refresh OSM data (upsert preserves
+     existing enriched values via `COALESCE`).
+  2. `recover_osm_tags.py --apply` — promote contact fields already in `tags_json`
+     to top-level columns (free, no network calls).
+  3. `migrate_private.py` — adds `maps_url`, `photo_url`, `enriched_at`,
+     `cq_scraped_at` columns (safe to re-run).
+  4. `scrape_campingquebec.py --apply` — scrapes Camping Québec; fuzzy name +
+     proximity match against existing rows; inserts unmatched campgrounds as new.
+- **Current coverage** (as of 2026-06-05): 2,797 total campgrounds; 948 with
+  phone, 836 with website, 1,119 with address, 818 with Google Maps URL.
 - Per-day availability for private grounds is OUT OF SCOPE (no shared source).
 
 ### 2.5 Weather
@@ -107,9 +124,13 @@ each in its own session to avoid races):
 - Marker colour reflects availability density (green = lots, light-green = some,
   grey = none) over the next ~90 days from cached data.
 - Optional per-park weather label on the marker.
-- **Private campgrounds layer**: OFF by default; a toggle adds an orange-pin
-  layer. Popups show name / phone / operator / "Visit website" (external link,
-  must be an absolute https URL). OSM/ODbL attribution shown on the map.
+- **Private campgrounds layer**: two independent toggles, both OFF by default:
+  - *"Private campgrounds"* — **orange pins** for campgrounds that have at least
+    a phone number or website. Popups show name, phone, operator, "Visit website"
+    link, and Google Maps link when available.
+  - *"Private (no data)"* — **gray pins** for campgrounds with neither phone nor
+    website. Popup notes that no contact info is available.
+- OSM/ODbL attribution shown on the map.
 - Filters: by site type, and a result count.
 
 ### 3.2 Browse view (drill-down)
@@ -167,9 +188,17 @@ each in its own session to avoid races):
 ### 4.2 `photos.db` (separate) — site images
 - `site_photos(unit_id PRIMARY KEY, photo_url, photo_data BLOB, fetched_at)`.
 
-### 4.3 `private.db` (separate) — OSM campgrounds
+### 4.3 `private.db` (separate) — private campgrounds
 - `private_campgrounds(id, source, source_id, name, lat, lon, website, phone,
-  operator, address, region, tags_json, fetched_at, UNIQUE(source, source_id))`.
+  operator, address, region, tags_json, fetched_at, maps_url, photo_url,
+  enriched_at, cq_scraped_at, UNIQUE(source, source_id))`.
+- `source` is `'osm'` for OpenStreetMap records or `'campingquebec'` for
+  campgrounds added via the Camping Québec scraper.
+- `maps_url` — Google Maps deep link (`maps.google.ca/?q=lat,lon`) parsed from
+  the Camping Québec detail page.
+- `photo_url` — reserved for future photo enrichment (currently unpopulated).
+- `cq_scraped_at` — timestamp set when a row has been processed by
+  `scrape_campingquebec.py`; used for resumability.
 
 **Rebuild note:** keeping photos and private data in separate stores is
 intentional — large BLOBs and an independently-refreshed external dataset
@@ -189,7 +218,7 @@ naturally to separate tables/buckets (e.g. object storage for images).
 | GET | `/api/sectors/<id>/live-sites?from&to[&available_only][&site_type]` | **Live** per-site availability (the core map feed). Returns sites + `cookie_status`. |
 | GET | `/api/sectors/<id>/range-availability?from&to` | Product types available every night in range |
 | GET | `/api/site-types` | Distinct site types |
-| GET | `/api/private-campgrounds[?bbox=s,w,n,e]` | Private campgrounds from private.db |
+| GET | `/api/private-campgrounds[?bbox=s,w,n,e]` | Private campgrounds from private.db. Returns `maps_url` and `photo_url` when columns exist (backward-compatible). |
 | GET | `/api/site-photos?unit_ids=a,b,c` | Per-unit photo availability map (`"cached"` or URL) |
 | GET | `/api/site-photo-img/<unit_id>` | Serve a site photo BLOB |
 | GET | `/api/search` | Cross-park availability search |
@@ -231,6 +260,12 @@ naturally to separate tables/buckets (e.g. object storage for images).
 4. **Private availability** — intentionally out of scope (no shared source);
    would be a per-platform effort (Campspot/Hipcamp/Camping Québec) if pursued.
 5. **Multi-user / hosting / auth** — not yet designed; required for a web app.
+6. **Private campground photos** — `photo_url` column exists but is unpopulated.
+   Camping Québec detail pages have photos; a future pass of `scrape_campingquebec.py`
+   could download and store them (similar to the SEPAQ `photos.db` pattern).
+7. **Camping Québec re-scrape cadence** — membership and contact info changes
+   seasonally. Run `scrape_campingquebec.py --apply --force` at the start of each
+   camping season to refresh.
 
 ---
 
