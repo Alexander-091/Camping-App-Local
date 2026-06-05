@@ -457,6 +457,10 @@
           <input type="checkbox" id="showPrivateCampgrounds" />
           <span>Private campgrounds</span>
         </label>
+        <label style="display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" id="showPrivateNoData" />
+          <span style="color:#888">Private (no data)</span>
+        </label>
       </div>
       <div id="map"></div>
     </div>
@@ -526,8 +530,9 @@ let selectedParkId   = null;
 let selectedSectorId = null;
 let mapFilteredParkIds = null;  // null = no filter active
 let weatherData = {};           // park_id → { days: [...] }
-let privateCampgroundsLayer = null;  // Leaflet layer group for private campgrounds
-let privateCampgrounds = [];    // array of private campground objects
+let privateCampgroundsLayer = null;    // Leaflet layer group — campgrounds with phone or website
+let privateNoDataLayer = null;         // Leaflet layer group — campgrounds with no contact info
+let privateCampgrounds = [];           // array of private campground objects
 
 // ─── Weather helpers ──────────────────────────────────────────────────────────
 const WMO = {
@@ -707,11 +712,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   checkScraperStatus();
   checkCookieStatus();
 
-  // Add listener for private campgrounds toggle
+  // Add listeners for private campgrounds toggles
   const checkbox = document.getElementById("showPrivateCampgrounds");
-  if (checkbox) {
-    checkbox.addEventListener("change", updatePrivateCampgroundsVisibility);
-  }
+  if (checkbox) checkbox.addEventListener("change", updatePrivateCampgroundsVisibility);
+  const checkboxNoData = document.getElementById("showPrivateNoData");
+  if (checkboxNoData) checkboxNoData.addEventListener("change", updatePrivateCampgroundsVisibility);
 });
 
 // ─── Map ──────────────────────────────────────────────────────────────────────
@@ -722,10 +727,10 @@ function initMap() {
     maxZoom: 18,
   }).addTo(map);
 
-  // Create layer group for private campgrounds — NOT added to the map by
-  // default (toggle is off). updatePrivateCampgroundsVisibility() adds it only
-  // when the user ticks the "Private campgrounds" checkbox.
-  privateCampgroundsLayer = L.layerGroup();
+  // Create layer groups for private campgrounds — neither added to the map by
+  // default. updatePrivateCampgroundsVisibility() adds them when toggled.
+  privateCampgroundsLayer = L.layerGroup();  // has phone or website
+  privateNoDataLayer      = L.layerGroup();  // neither
   updatePrivateCampgroundsVisibility();
 }
 
@@ -823,60 +828,74 @@ async function loadPrivateCampgrounds() {
   }
 }
 
+function makePrivateIcon(color) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36">
+    <ellipse cx="14" cy="34" rx="6" ry="2" fill="rgba(0,0,0,.2)"/>
+    <path d="M14 1C8.477 1 4 5.477 4 11c0 7.75 10 23 10 23S24 18.75 24 11C24 5.477 19.523 1 14 1z"
+          fill="${color}" stroke="white" stroke-width="1.5"/>
+    <circle cx="14" cy="11" r="4.5" fill="white" opacity=".9"/>
+  </svg>`;
+  return L.divIcon({
+    html: `<div style="position:relative;width:28px">${svg}</div>`,
+    className: "",
+    iconSize:    [28, 36],
+    iconAnchor:  [14, 34],
+    popupAnchor: [0, -34],
+  });
+}
+
+function makePrivatePopup(camp) {
+  const siteUrl = camp.website
+    ? (/^https?:\/\//i.test(camp.website) ? camp.website : "https://" + camp.website.replace(/^\/+/, ""))
+    : "";
+  const websiteLink = siteUrl
+    ? `<div style="margin-top:6px"><a href="${siteUrl}" target="_blank" rel="noopener" style="font-size:12px;color:#d97706;font-weight:600">Visit website →</a></div>`
+    : "";
+  const mapsLink = camp.maps_url
+    ? `<div style="margin-top:4px"><a href="${camp.maps_url}" target="_blank" rel="noopener" style="font-size:12px;color:#555">View on Google Maps →</a></div>`
+    : "";
+  const phoneText = camp.phone
+    ? `<div style="font-size:12px;color:#555;margin-top:2px">${camp.phone}</div>`
+    : "";
+  const operatorText = camp.operator
+    ? `<div style="font-size:12px;color:#9e9e9e;margin-top:2px">${camp.operator}</div>`
+    : "";
+  const noDataNote = (!camp.phone && !camp.website)
+    ? `<div style="font-size:11px;color:#aaa;margin-top:6px;font-style:italic">No contact info available</div>`
+    : "";
+  return `<div style="min-width:200px">
+    <div style="font-weight:600;font-size:13px;margin-bottom:4px">${camp.name}</div>
+    ${phoneText}${operatorText}${websiteLink}${mapsLink}${noDataNote}
+  </div>`;
+}
+
 function updatePrivateCampgroundsMarkers() {
-  if (!privateCampgroundsLayer) return;
+  if (!privateCampgroundsLayer || !privateNoDataLayer) return;
   privateCampgroundsLayer.clearLayers();
+  privateNoDataLayer.clearLayers();
+
+  const iconOrange = makePrivateIcon("#d97706");
+  const iconGray   = makePrivateIcon("#9e9e9e");
 
   privateCampgrounds.forEach(camp => {
     if (!camp.lat || !camp.lon) return;
-
-    // Create a distinct icon for private campgrounds (orange/brown color)
-    const html = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36">
-      <ellipse cx="14" cy="34" rx="6" ry="2" fill="rgba(0,0,0,.2)"/>
-      <path d="M14 1C8.477 1 4 5.477 4 11c0 7.75 10 23 10 23S24 18.75 24 11C24 5.477 19.523 1 14 1z"
-            fill="#d97706" stroke="white" stroke-width="1.5"/>
-      <circle cx="14" cy="11" r="4.5" fill="white" opacity=".9"/>
-    </svg>`;
-    const icon = L.divIcon({
-      html: `<div style="position:relative;width:28px">${html}</div>`,
-      className: "",
-      iconSize:    [28, 36],
-      iconAnchor:  [14, 34],
-      popupAnchor: [0, -34],
-    });
-
-    const marker = L.marker([camp.lat, camp.lon], { icon }).addTo(privateCampgroundsLayer);
-
-    // Build popup content. OSM website tags may lack a scheme (e.g.
-    // "example.com"), which the browser would resolve against localhost — so
-    // ensure an absolute https:// URL.
-    const siteUrl = camp.website
-      ? (/^https?:\/\//i.test(camp.website) ? camp.website : "https://" + camp.website.replace(/^\/+/, ""))
-      : "";
-    const websiteLink = siteUrl
-      ? `<div style="margin-top:6px"><a href="${siteUrl}" target="_blank" rel="noopener" style="font-size:12px;color:#d97706;font-weight:600">Visit website →</a></div>`
-      : "";
-    const phoneText = camp.phone
-      ? `<div style="font-size:12px;color:#555;margin-top:2px">${camp.phone}</div>`
-      : "";
-    const operatorText = camp.operator
-      ? `<div style="font-size:12px;color:#9e9e9e;margin-top:2px">${camp.operator}</div>`
-      : "";
-
-    marker.bindPopup(`
-      <div style="min-width:200px">
-        <div style="font-weight:600;font-size:13px;margin-bottom:4px">${camp.name}</div>
-        ${phoneText}${operatorText}${websiteLink}
-      </div>`);
+    const hasData = !!(camp.phone || camp.website);
+    const icon    = hasData ? iconOrange : iconGray;
+    const layer   = hasData ? privateCampgroundsLayer : privateNoDataLayer;
+    L.marker([camp.lat, camp.lon], { icon })
+      .bindPopup(makePrivatePopup(camp))
+      .addTo(layer);
   });
 }
 
 function updatePrivateCampgroundsVisibility() {
-  const checkbox = document.getElementById("showPrivateCampgrounds");
-  if (checkbox && checkbox.checked) {
-    if (privateCampgroundsLayer) map.addLayer(privateCampgroundsLayer);
-  } else {
-    if (privateCampgroundsLayer) map.removeLayer(privateCampgroundsLayer);
+  const show        = document.getElementById("showPrivateCampgrounds")?.checked;
+  const showNoData  = document.getElementById("showPrivateNoData")?.checked;
+  if (privateCampgroundsLayer) {
+    show       ? map.addLayer(privateCampgroundsLayer) : map.removeLayer(privateCampgroundsLayer);
+  }
+  if (privateNoDataLayer) {
+    showNoData ? map.addLayer(privateNoDataLayer)      : map.removeLayer(privateNoDataLayer);
   }
 }
 
