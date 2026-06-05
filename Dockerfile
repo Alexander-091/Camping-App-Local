@@ -13,4 +13,5 @@ COPY . .
 EXPOSE 8080
 
 # Start the app
-CMD ["sh", "-c", "gunicorn --chdir app app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120"]
+ENV PORT=8080
+CMD ["sh", "-c", "gunicorn --chdir app app:app --bind 0.0.0.0:${PORT} --workers 2 --threads 4 --timeout 120"]
