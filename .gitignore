@@ -1,7 +1,11 @@
 ﻿data/photos.db
+data/private.db.backup
 __pycache__/
 *.pyc
 scraper/chrome_profile/
 scraper/browser_profile/
 scraper/session_cookie.json
 scraper/cookies.json.stale
+
+# Environment / secrets
+.env

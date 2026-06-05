@@ -165,15 +165,25 @@ def normalize_campground(element: dict, element_id: str) -> Optional[dict]:
     # Operator
     operator = tags.get('operator', '').strip() or None
 
-    # Address: try several tags
-    address = (
-        tags.get('addr:full', '') or
-        tags.get('address', '') or
-        (f"{tags.get('addr:street', '')}, {tags.get('addr:city', '')}".strip(', ') if (
-            tags.get('addr:street') or tags.get('addr:city')
-        ) else '')
-    )
-    address = address.strip() or None
+    # Address: try several tags, building from parts when needed
+    if tags.get('addr:full'):
+        address = tags['addr:full'].strip()
+    elif tags.get('address'):
+        address = tags['address'].strip()
+    else:
+        number = tags.get('addr:housenumber', '').strip()
+        street = tags.get('addr:street', '').strip()
+        city   = tags.get('addr:city', '').strip()
+        parts  = []
+        if number and street:
+            parts.append(f"{number} {street}")
+        elif street:
+            parts.append(street)
+        if city:
+            parts.append(city)
+        address = ', '.join(parts) or None
+    if address == '':
+        address = None
 
     # Infer region from tags or coordinates
     region = tags.get('addr:state', '') or tags.get('addr:province', '') or None
@@ -294,11 +304,11 @@ def save_to_database(campgrounds: list) -> None:
                     name=excluded.name,
                     lat=excluded.lat,
                     lon=excluded.lon,
-                    website=excluded.website,
-                    phone=excluded.phone,
-                    operator=excluded.operator,
-                    address=excluded.address,
-                    region=excluded.region,
+                    website=COALESCE(excluded.website, website),
+                    phone=COALESCE(excluded.phone, phone),
+                    operator=COALESCE(excluded.operator, operator),
+                    address=COALESCE(excluded.address, address),
+                    region=COALESCE(excluded.region, region),
                     tags_json=excluded.tags_json,
                     fetched_at=excluded.fetched_at
             """, (

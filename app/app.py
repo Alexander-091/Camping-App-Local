@@ -900,7 +900,12 @@ def api_private_campgrounds():
         conn.close()
         return jsonify([])
 
-    query = ("SELECT id, name, lat, lon, website, phone, operator, address, region"
+    # Check which optional enrichment columns exist (added by migrate_private.py).
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(private_campgrounds)")}
+    extra = ", ".join(c for c in ("maps_url", "photo_url") if c in existing_cols)
+    select_extra = f", {extra}" if extra else ""
+
+    query = (f"SELECT id, name, lat, lon, website, phone, operator, address, region{select_extra}"
              " FROM private_campgrounds")
     params = []
     bbox = request.args.get("bbox", "")
