@@ -1192,6 +1192,32 @@ def api_weather():
     return jsonify([])
 
 
+# ─── DB upload (temporary utility for Railway free tier) ─────────────────────
+
+@app.post("/api/upload-db")
+def api_upload_db():
+    """Accept a replacement sepaq.db uploaded from local machine.
+    Protected by X-Scrape-Token. Remove this endpoint once SSH/CLI is available.
+    """
+    if not SCRAPE_SECRET:
+        return jsonify({"error": "SCRAPE_SECRET not set — refusing upload"}), 403
+    token = request.headers.get("X-Scrape-Token", "")
+    if token != SCRAPE_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    f = request.files.get("db")
+    if not f:
+        return jsonify({"error": "No file provided — send as multipart field 'db'"}), 400
+
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    dest = os.path.join(_DATA_DIR, "sepaq.db")
+    tmp  = dest + ".tmp"
+    f.save(tmp)
+    os.replace(tmp, dest)
+    size_mb = os.path.getsize(dest) / 1024 / 1024
+    return jsonify({"status": "ok", "path": dest, "size_mb": round(size_mb, 2)})
+
+
 # ─── Scraper control ──────────────────────────────────────────────────────────
 
 @app.post("/api/scrape")
