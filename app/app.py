@@ -394,6 +394,103 @@ def _fetch_live_sites(sector_id: int, from_date: str, to_date: str) -> dict:
 app = Flask(__name__)
 
 
+def _bootstrap_db():
+    """Create DB files and tables if they don't exist yet (fresh deploy)."""
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS parks (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT NOT NULL,
+            slug       TEXT UNIQUE,
+            scraped_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS sectors (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            park_id    INTEGER REFERENCES parks(id),
+            name       TEXT,
+            slug       TEXT,
+            url        TEXT,
+            scraped_at TEXT,
+            UNIQUE(park_id, slug)
+        );
+        CREATE TABLE IF NOT EXISTS campsites (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            park_id    INTEGER REFERENCES parks(id),
+            sector_id  INTEGER REFERENCES sectors(id),
+            name       TEXT,
+            site_id    TEXT,
+            type       TEXT,
+            amenities  TEXT,
+            scraped_at TEXT,
+            UNIQUE(sector_id, site_id)
+        );
+        CREATE TABLE IF NOT EXISTS availability (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            campsite_id     INTEGER REFERENCES campsites(id),
+            date            TEXT,
+            available       INTEGER,
+            sites_available INTEGER DEFAULT 0,
+            price           REAL,
+            scraped_at      TEXT,
+            UNIQUE(campsite_id, date)
+        );
+        CREATE TABLE IF NOT EXISTS boucles (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            sector_id        INTEGER REFERENCES sectors(id),
+            name             TEXT,
+            slug             TEXT,
+            url              TEXT,
+            is_sector_level  INTEGER DEFAULT 0,
+            map_url          TEXT,
+            scraped_at       TEXT,
+            UNIQUE(sector_id, slug)
+        );
+        CREATE TABLE IF NOT EXISTS sites (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            boucle_id   INTEGER REFERENCES boucles(id),
+            unit_id     TEXT,
+            site_name   TEXT,
+            site_type   TEXT,
+            url         TEXT,
+            x_pct       REAL,
+            y_pct       REAL,
+            photo_url   TEXT,
+            photo_data  BLOB,
+            scraped_at  TEXT,
+            UNIQUE(boucle_id, unit_id)
+        );
+        CREATE TABLE IF NOT EXISTS range_availability (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            sector_id       INTEGER REFERENCES sectors(id),
+            checkin         TEXT NOT NULL,
+            checkout        TEXT NOT NULL,
+            sites_available INTEGER NOT NULL DEFAULT 0,
+            scraped_at      TEXT,
+            UNIQUE(sector_id, checkin, checkout)
+        );
+        CREATE TABLE IF NOT EXISTS raw_responses (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            url         TEXT,
+            park_slug   TEXT,
+            status_code INTEGER,
+            body        TEXT,
+            captured_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS weather_cache (
+            from_date  TEXT,
+            to_date    TEXT,
+            data       TEXT,
+            fetched_at TEXT,
+            PRIMARY KEY (from_date, to_date)
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+_bootstrap_db()
+
+
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
