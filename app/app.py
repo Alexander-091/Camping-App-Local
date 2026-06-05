@@ -23,11 +23,13 @@ from flask import Flask, jsonify, render_template, request, Response, stream_wit
 # ─── Config ───────────────────────────────────────────────────────────────────
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
-DB_PATH     = os.path.join(BASE_DIR, "..", "data", "sepaq.db")
-PHOTOS_DB_PATH = os.path.join(BASE_DIR, "..", "data", "photos.db")
-PRIVATE_DB_PATH = os.path.join(BASE_DIR, "..", "data", "private.db")
-SCRAPER_DIR  = os.path.join(BASE_DIR, "..", "scraper")
+_DATA_DIR   = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "..", "data"))
+DB_PATH     = os.path.join(_DATA_DIR, "sepaq.db")
+PHOTOS_DB_PATH = os.path.join(_DATA_DIR, "photos.db")
+PRIVATE_DB_PATH = os.path.join(_DATA_DIR, "private.db")
+SCRAPER_DIR  = os.environ.get("SCRAPER_DIR", os.path.join(BASE_DIR, "..", "scraper"))
 SCRAPER_PY   = os.path.join(SCRAPER_DIR, "scraper.py")
+SCRAPE_SECRET = os.environ.get("SCRAPE_SECRET", "")
 COOKIE_FILE  = os.path.join(SCRAPER_DIR, "session_cookie.json")
 COOKIE_FILE_PW = os.path.join(SCRAPER_DIR, "cookies.json")
 SEPAQ_BASE   = "https://www.sepaq.com"
@@ -1097,6 +1099,10 @@ def api_weather():
 
 @app.post("/api/scrape")
 def api_scrape_start():
+    if SCRAPE_SECRET:
+        token = request.headers.get("X-Scrape-Token", "")
+        if token != SCRAPE_SECRET:
+            return jsonify({"error": "Unauthorized"}), 401
     if _scraper_state["running"]:
         return jsonify({"error": "Scraper already running"}), 409
     proc = subprocess.Popen(
