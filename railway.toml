@@ -2,10 +2,6 @@
 builder = "dockerfile"
 
 [deploy]
-startCommand = "gunicorn --chdir app app:app --bind 0.0.0.0:${PORT:-8080} --workers 2 --threads 4 --timeout 120"
 healthcheckPath = "/"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
-
-[[services]]
-internalPort = 8080
