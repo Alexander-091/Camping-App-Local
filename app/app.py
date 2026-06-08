@@ -1192,16 +1192,7 @@ def api_weather():
     return jsonify([])
 
 
-# ─── Debug (temporary) ───────────────────────────────────────────────────────
-
-@app.get("/api/debug-env")
-def api_debug_env():
-    """Temporary: confirm which env vars are set (values masked)."""
-    keys = ["DATA_DIR", "SCRAPER_DIR", "SCRAPE_SECRET", "PORT"]
-    return jsonify({k: ("SET" if os.environ.get(k) else "NOT SET") for k in keys})
-
-
-# ─── DB upload (temporary utility for Railway free tier) ─────────────────────
+# ─── DB upload (utility for Railway free tier) ───────────────────────────────
 
 @app.post("/api/upload-db")
 def api_upload_db():
