@@ -412,12 +412,6 @@
 </head>
 <body>
 
-<div id="cookieBanner" style="display:none;background:#fff3cd;color:#856404;border-bottom:1px solid #ffc107;
-     padding:8px 20px;font-size:13px;display:none;align-items:center;gap:12px;z-index:200">
-  <span id="cookieBannerMsg"></span>
-  <a href="#" style="margin-left:auto;font-weight:600;color:#856404;white-space:nowrap"
-     onclick="document.getElementById('cookieBanner').style.display='none';return false">Dismiss</a>
-</div>
 
 <header>
   <h1>🏕 Milosevic Camp Planner</h1>
@@ -427,6 +421,9 @@
     <button class="tab"        data-view="search">Search</button>
   </nav>
   <button class="scraper-btn" id="scraperBtn">↺ Refresh Data</button>
+  <span id="cookieDot" title="Live availability unavailable — no SEPAQ cookies"
+        style="display:none;width:10px;height:10px;border-radius:50%;background:#ffc107;
+               flex-shrink:0;margin-left:-8px;"></span>
 </header>
 
 <div class="main">
@@ -1717,15 +1714,8 @@ function openSectorAvailFromSearch(sectorId, parkId) {
 async function checkCookieStatus() {
   const res  = await fetch("/api/cookie-status");
   const data = await res.json();
-  const banner = document.getElementById("cookieBanner");
-  const msg    = document.getElementById("cookieBannerMsg");
-  if (!data.has_cookies) {
-    msg.textContent = "⚠ No SEPAQ cookies found. Run python scraper/get_cookie.py then restart the app to enable live availability.";
-    banner.style.display = "flex";
-  } else if (data.stale) {
-    msg.textContent = `⚠ SEPAQ cookies are ${data.age_hours}h old and may have expired. Run python scraper/get_cookie.py to refresh them.`;
-    banner.style.display = "flex";
-  }
+  const dot  = document.getElementById("cookieDot");
+  dot.style.display = (!data.has_cookies || data.stale) ? "inline-block" : "none";
 }
 
 async function checkScraperStatus() {
