@@ -295,7 +295,8 @@ def _fetch_live_sites(sector_id: int, from_date: str, to_date: str) -> dict:
     cookie_hdr = _build_cookie_header(cookies)
 
     if not cookies:
-        return {"sites": [], "cookie_status": "missing"}
+        # Return DB sites with no colour so the frontend can simulate availability
+        return {"sites": list(base_by_unit.values()), "cookie_status": "missing"}
 
     def _result():
         return {"sites": list(base_by_unit.values()),
@@ -1192,7 +1193,7 @@ def api_weather():
     return jsonify([])
 
 
-# ─── DB upload (utility for Railway free tier) ───────────────────────────────
+# ─── DB / cookie upload (utility for Railway free tier) ──────────────────────
 
 @app.post("/api/upload-db")
 def api_upload_db():
@@ -1216,6 +1217,34 @@ def api_upload_db():
     os.replace(tmp, dest)
     size_mb = os.path.getsize(dest) / 1024 / 1024
     return jsonify({"status": "ok", "path": dest, "size_mb": round(size_mb, 2)})
+
+
+@app.post("/api/upload-cookies")
+def api_upload_cookies():
+    """Accept a replacement cookies.json uploaded from local machine.
+    Protected by X-Scrape-Token. Writes to SCRAPER_DIR so the app finds it.
+    """
+    if not SCRAPE_SECRET:
+        return jsonify({"error": "SCRAPE_SECRET not set — refusing upload"}), 403
+    token = request.headers.get("X-Scrape-Token", "")
+    if token != SCRAPE_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    f = request.files.get("cookies")
+    if not f:
+        return jsonify({"error": "No file provided — send as multipart field 'cookies'"}), 400
+
+    os.makedirs(SCRAPER_DIR, exist_ok=True)
+    dest = os.path.join(SCRAPER_DIR, "cookies.json")
+    tmp  = dest + ".tmp"
+    f.save(tmp)
+    os.replace(tmp, dest)
+
+    # Clear the live availability cache so next request uses fresh cookies.
+    global _live_cache
+    _live_cache = {}
+
+    return jsonify({"status": "ok", "path": dest})
 
 
 # ─── Scraper control ──────────────────────────────────────────────────────────
