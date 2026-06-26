@@ -421,7 +421,7 @@
     <button class="tab"        data-view="search">Search</button>
   </nav>
   <button class="scraper-btn" id="scraperBtn">↺ Refresh Data</button>
-  <span id="cookieDot" title="Live availability unavailable — no SEPAQ cookies"
+  <span id="cookieDot"
         style="display:none;width:10px;height:10px;border-radius:50%;background:#ffc107;
                flex-shrink:0;margin-left:-8px;"></span>
 </header>
@@ -1101,21 +1101,8 @@ async function openSectorRangeAvail(sectorId, parkId, from, to) {
   const nights     = Math.round((new Date(to) - new Date(from)) / 86400000);
   const nightsTxt  = `${nights} night${nights !== 1 ? "s" : ""}`;
 
-  if (!data.has_cookies) {
-    _setContentPanel(`<div class="browse-empty" style="margin-top:30px">
-      No cookies found. Run <code>python scraper/get_cookie.py</code> to refresh.
-    </div>`);
-    _setMapPanel('');
-    return;
-  }
-
-  if (data.cookie_status === "expired") {
-    _setContentPanel(`<div class="browse-empty" style="margin-top:30px;border:1px solid #d9a441;background:#fff8e8;padding:16px;border-radius:8px">
-      <strong>SEPAQ session expired.</strong><br>
-      Availability couldn't be loaded because the saved cookies are no longer valid.<br>
-      Run <code>python scraper/get_cookie.py</code> to refresh, then click <strong>Refresh Data</strong>.
-    </div>`);
-    _setMapPanel('');
+  if (!data.has_cookies || data.cookie_status === "expired") {
+    _simulateSiteAvailability(data, from, to, sectorId, parkId);
     return;
   }
 
@@ -1285,6 +1272,187 @@ async function openSectorRangeAvail(sectorId, parkId, from, to) {
       </select>
     </div>
     ${empty}${boucleHtml}`);
+
+  loadSitePhotos();
+}
+
+// ─── Demo mode ────────────────────────────────────────────────────────────────
+function _simulateSiteAvailability(data, from, to, sectorId, parkId) {
+  let seed = sectorId * 31337 + (new Date(from).getTime() / 86400000 | 0);
+  function rand() {
+    seed = (seed * 1664525 + 1013904223) & 0xffffffff;
+    return (seed >>> 0) / 0xffffffff;
+  }
+  const dot = document.getElementById("cookieDot");
+  dot.style.background = "#e53935";
+  dot.title = "Demo mode — availability is simulated";
+  dot.style.display = "inline-block";
+
+  const sites = (data.sites || []).map(s => {
+    const r = rand();
+    const colour = r < 0.40 ? "green" : r < 0.65 ? "yellow" : "red";
+    return Object.assign({}, s, {
+      colour,
+      available: colour === "green",
+      partial:   colour === "yellow",
+      price: s.price != null ? s.price : (Math.floor(rand() * 3) * 5 + 25),
+    });
+  });
+
+  _renderSectorAvail(
+    Object.assign({}, data, { sites, has_cookies: true, cookie_status: "ok", _simulated: true }),
+    from, to, sectorId, parkId, true
+  );
+}
+
+function _renderSectorAvail(data, from, to, sectorId, parkId, simulated) {
+  const park       = parks.find(p => p.id === parkId) || { name: data.sites[0]?.park_name || "", id: parkId };
+  const sectorName = data.sites[0]?.sector_name || "";
+  const sepaqHref  = data.sepaq_url || "#";
+  const nights     = Math.round((new Date(to) - new Date(from)) / 86400000);
+  const nightsTxt  = `${nights} night${nights !== 1 ? "s" : ""}`;
+
+  const boucleGroups = {};
+  data.sites.forEach(s => {
+    const b = s.boucle || "sites";
+    if (!boucleGroups[b]) boucleGroups[b] = { map_url: s.boucle_map_url || "", sites: [] };
+    boucleGroups[b].sites.push(s);
+  });
+  const boucleNames  = Object.keys(boucleGroups);
+  const multipleB    = boucleNames.length > 1;
+  const activeBoucle = boucleNames[0] || "";
+
+  function renderMapPanel(boucleName) {
+    const grp = boucleGroups[boucleName];
+    if (!grp) return;
+    const label = boucleName.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    const tabs = multipleB ? `<div class="boucle-tabs">
+      ${boucleNames.map(n => {
+        const lbl = n.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+        return `<button class="boucle-tab${n === boucleName ? ' active' : ''}"
+                        onclick="switchBoucle('${n}', ${sectorId}, ${parkId})">${lbl}</button>`;
+      }).join("")}
+    </div>` : "";
+    const DOT_CLR = { green: "dot-green", yellow: "dot-yellow", red: "dot-red" };
+    const dots = grp.map_url ? grp.sites
+      .filter(s => s.x_pct != null && s.y_pct != null)
+      .map(s => {
+        const cls     = DOT_CLR[s.colour] || "dot-unknown";
+        const name    = s.site_name ? s.site_name.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : `Unit ${s.unit_id}`;
+        const price   = s.price != null ? ` · $${s.price.toFixed(0)}` : "";
+        const bookUrl = s.url ? `https://www.sepaq.com${s.url.startsWith("/") ? s.url : "/" + s.url}` : "#";
+        return `<div class="map-dot ${cls}" data-unit-id="${s.unit_id}"
+                    style="left:${s.x_pct}%;top:${s.y_pct}%"
+                    title="${name}${price}"
+                    onclick="window.open('${bookUrl}', '_blank'); return false;"
+                    data-booking-url="${bookUrl}">
+                  <div class="map-dot-tip">${name}${price}</div>
+                </div>`;
+      }).join("") : "";
+    const sitesByColour = { green: 0, yellow: 0, red: 0 };
+    grp.sites.forEach(s => { if (s.colour && sitesByColour.hasOwnProperty(s.colour)) sitesByColour[s.colour]++; });
+    const legendHtml = grp.map_url ? `<div class="site-map-legend">
+      <div class="legend-item"><div class="legend-dot available"></div>
+        <span>Available${sitesByColour.green > 0 ? ` (${sitesByColour.green})` : ""}</span></div>
+      <div class="legend-item"><div class="legend-dot partial"></div>
+        <span>Partial${sitesByColour.yellow > 0 ? ` (${sitesByColour.yellow})` : ""}</span></div>
+      <div class="legend-item"><div class="legend-dot full"></div>
+        <span>Full${sitesByColour.red > 0 ? ` (${sitesByColour.red})` : ""}</span></div>
+    </div>` : "";
+    const mapHtml = grp.map_url
+      ? `<div class="site-map-wrap"><div class="site-map-container">
+           <img src="${grp.map_url}" alt="${label}">${dots}</div>${legendHtml}</div>`
+      : `<div style="padding:16px;color:var(--soft);font-size:13px">
+           <strong>Map not available</strong><br>This boucle doesn't have a schematic map.</div>`;
+    document.getElementById("browseMapInner").innerHTML = tabs + mapHtml;
+    attachMapHighlighting();
+  }
+
+  window._boucleGroups   = boucleGroups;
+  window._sectorSectorId = sectorId;
+  window._sectorParkId   = parkId;
+  window._activeBoucle   = activeBoucle;
+  window._sectorData     = { sectorName, sectorId, parkId, park, from, to, nightsTxt };
+  renderMapPanel(activeBoucle);
+
+  _browseSites = data.sites.filter(s => s.available || s.partial);
+  const COLOUR = { green: "var(--green)", yellow: "#f57c00", red: "#c62828" };
+  const LABEL  = { green: "Available", yellow: "Partial", red: "Full" };
+
+  const boucleHtml = boucleNames.map(bName => {
+    const grp2   = boucleGroups[bName];
+    const avail = grp2.sites.filter(s => s.available || s.partial);
+    if (!avail.length) return "";
+    const boucleName = bName.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    const siteCards = avail.map(s => {
+      const colour  = COLOUR[s.colour] || "var(--grey)";
+      const label   = LABEL[s.colour]  || s.colour;
+      const price   = s.price != null ? `$${s.price.toFixed(2)}/night` : "";
+      const siteNum = s.site_name ? s.site_name.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : `Unit ${s.unit_id}`;
+      const bookUrl = s.url ? `https://www.sepaq.com${s.url.startsWith("/") ? s.url : "/" + s.url}` : sepaqHref;
+      return `<div class="sector-card browse-site-card" data-site-type="${s.site_type || ""}"
+                   data-unit-id="${s.unit_id}" style="cursor:default;border-left:3px solid ${colour};padding-top:0">
+        <div class="site-card-photo-wrap">
+          <img class="site-card-photo lazy-photo" data-unit-id="${s.unit_id}"
+               src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+               alt="${siteNum}" loading="lazy">
+        </div>
+        <div style="padding-top:10px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div class="sc-name">${siteNum}</div>
+            <span style="font-size:11px;font-weight:600;color:${colour}">${label}</span>
+          </div>
+          <div style="font-size:11px;color:var(--soft);margin:3px 0 6px">${s.site_type || ""}</div>
+          ${price ? `<div class="sc-price">${price}</div>` : ""}
+          <div style="margin-top:8px">
+            <a class="book-link" href="${bookUrl}" target="_blank" rel="noopener">Book on SEPAQ →</a>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+    return `<div class="browse-boucle-section" style="margin-bottom:20px">
+      ${multipleB ? `<div style="font-size:11px;font-weight:600;color:var(--soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">${boucleName}</div>` : ""}
+      <div class="sector-grid">${siteCards}</div>
+    </div>`;
+  }).join("");
+
+  const availCount = _browseSites.length;
+  const empty = availCount === 0
+    ? `<div class="browse-empty" style="margin-top:30px">No available sites for ${nightsTxt}.<br>
+        <span style="font-size:13px;color:var(--soft)">Try different dates or a different site type.</span></div>`
+    : "";
+  const simBanner = simulated
+    ? `<div style="font-size:12px;color:#e53935;background:#fff0f0;border:1px solid #ffcdd2;
+                   border-radius:6px;padding:8px 12px;margin-bottom:12px">
+        ⚠ Simulated availability — live data unavailable
+       </div>`
+    : "";
+
+  _setContentPanel(`
+    <div class="breadcrumb">
+      <a onclick="openParkBrowse(${parkId});return false">${park.name}</a>
+      <span class="sep">›</span><span>${sectorName}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div class="park-title">${sectorName}</div>
+        <div class="park-sub">${park.name} · ${nightsTxt} (${from} → ${to}) · ${availCount} site${availCount !== 1 ? "s" : ""} available</div>
+      </div>
+      <a class="btn" href="${sepaqHref}" target="_blank" rel="noopener" style="text-decoration:none;font-size:13px">Book on SEPAQ ↗</a>
+    </div>
+    <div class="filter-row">
+      <label>Check-in</label><input type="date" id="browseFrom" value="${from}">
+      <label>Check-out</label><input type="date" id="browseTo" value="${to}">
+      <button class="btn" onclick="openSectorAvail(${sectorId},${parkId})">Apply</button>
+      <label style="margin-left:8px">Site type</label>
+      <select id="browseSiteType" onchange="filterBrowseSiteType()"
+              style="border:1px solid var(--border);border-radius:var(--radius);padding:5px 10px;font-size:13px">
+        <option value="">All types</option>
+        ${[...new Set(data.sites.map(s => s.site_type).filter(Boolean))].sort()
+          .map(t => `<option value="${t}">${t}</option>`).join("")}
+      </select>
+    </div>
+    ${simBanner}${empty}${boucleHtml}`);
 
   loadSitePhotos();
 }
@@ -1715,7 +1883,18 @@ async function checkCookieStatus() {
   const res  = await fetch("/api/cookie-status");
   const data = await res.json();
   const dot  = document.getElementById("cookieDot");
-  dot.style.display = (!data.has_cookies || data.stale) ? "inline-block" : "none";
+  window._demoMode = !data.has_cookies;
+  if (!data.has_cookies) {
+    dot.style.background = "#e53935";
+    dot.title = "Demo mode — availability is simulated";
+    dot.style.display = "inline-block";
+  } else if (data.stale) {
+    dot.style.background = "#ffc107";
+    dot.title = "Live availability unavailable — no SEPAQ cookies";
+    dot.style.display = "inline-block";
+  } else {
+    dot.style.display = "none";
+  }
 }
 
 async function checkScraperStatus() {
