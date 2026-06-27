@@ -444,8 +444,7 @@
         <label>Check-out</label>
         <input type="date" id="mapTo" />
         <label>Site type</label>
-        <select id="mapSiteType" style="border:1px solid var(--border);border-radius:var(--radius);padding:5px 10px;font-size:13px;">
-          <option value="">All types</option>
+        <select id="mapSiteType" multiple style="border:1px solid var(--border);border-radius:var(--radius);padding:4px 6px;font-size:13px;min-width:140px;max-height:90px">
         </select>
         <button class="btn" id="mapFilterBtn">Filter</button>
         <span class="clear-link" id="mapClearBtn">Clear</span>
@@ -910,20 +909,25 @@ async function loadSiteTypes() {
 async function applyMapFilter() {
   const from     = document.getElementById("mapFrom").value;
   const to       = document.getElementById("mapTo").value;
-  const siteType = document.getElementById("mapSiteType").value;
+  const selEl    = document.getElementById("mapSiteType");
+  const siteTypes = [...selEl.selectedOptions].map(o => o.value);
   const countEl  = document.getElementById("mapResultCount");
   if (!from || !to) { countEl.textContent = "Select both dates."; return; }
   if (from >= to)   { countEl.textContent = "Check-out must be after check-in."; return; }
   countEl.textContent = "Filtering…";
-  const params = new URLSearchParams({ from, to });
-  if (siteType) params.set("site_type", siteType);
-  const [searchRes] = await Promise.all([
-    fetch(`/api/search?${params}`),
-    fetchWeather(from, to),
-  ]);
-  const data = await searchRes.json();
-  mapFilteredParkIds = new Set(data.map(p => p.id));
-  const label = siteType ? ` (${siteType})` : "";
+  // Fetch once per selected type and union the results
+  const allParkIds = new Set();
+  const fetchTargets = siteTypes.length > 0 ? siteTypes : [""];
+  await Promise.all(fetchTargets.map(async st => {
+    const params = new URLSearchParams({ from, to });
+    if (st) params.set("site_type", st);
+    const res = await fetch(`/api/search?${params}`);
+    const data = await res.json();
+    data.forEach(p => allParkIds.add(p.id));
+  }));
+  await fetchWeather(from, to);
+  mapFilteredParkIds = allParkIds;
+  const label = siteTypes.length > 0 ? ` (${siteTypes.join(", ")})` : "";
   countEl.textContent = `${mapFilteredParkIds.size} park${mapFilteredParkIds.size!==1?'s':''} available${label}`;
   updateMapMarkers();
 }
@@ -932,7 +936,7 @@ async function clearMapFilter() {
   mapFilteredParkIds = null;
   document.getElementById("mapFrom").value = "";
   document.getElementById("mapTo").value   = "";
-  document.getElementById("mapSiteType").value = "";
+  [...document.getElementById("mapSiteType").options].forEach(o => o.selected = false);
   document.getElementById("mapResultCount").textContent = "";
   const today = new Date().toISOString().split("T")[0];
   await fetchWeather(today, today);
