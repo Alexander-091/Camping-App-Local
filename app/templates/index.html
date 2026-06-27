@@ -950,6 +950,8 @@ function renderParkList() {
   const el = document.getElementById("parkList");
   if (!parks.length) { el.innerHTML = `<div class="no-data" style="padding:16px">No parks found.</div>`; return; }
   el.innerHTML = parks.map(p => {
+    const filtered = mapFilteredParkIds !== null;
+    const inFilter = !filtered || mapFilteredParkIds.has(p.id);
     const availLabel = p.use_range
       ? (p.avail_dates > 0 ? `${p.avail_dates} nights available` : "No availability (30 days)")
       : (p.avail_dates > 0 ? `${p.avail_dates} dates open` : "No availability");
@@ -958,7 +960,8 @@ function renderParkList() {
       : `<span class="avail-badge none">${availLabel}</span>`;
     const sec = p.sector_count > 0
       ? `${p.sector_count} sector${p.sector_count!==1?'s':''} · ` : "";
-    return `<div class="park-item" data-id="${p.id}" onclick="selectPark(${p.id})">
+    const dimStyle = !inFilter ? 'opacity:0.35;' : '';
+    return `<div class="park-item" data-id="${p.id}" onclick="selectPark(${p.id})" style="${dimStyle}">
       <div class="park-name">${p.name}</div>
       <div class="park-meta">${sec}scraped ${p.scraped_at ? p.scraped_at.slice(0,10) : '—'}</div>
       ${badge}
@@ -1264,9 +1267,8 @@ async function openSectorRangeAvail(sectorId, parkId, from, to) {
       <label>Check-out</label><input type="date" id="browseTo" value="${to}">
       <button class="btn" onclick="openSectorAvail(${sectorId},${parkId})">Apply</button>
       <label style="margin-left:8px">Site type</label>
-      <select id="browseSiteType" onchange="filterBrowseSiteType()"
-              style="border:1px solid var(--border);border-radius:var(--radius);padding:5px 10px;font-size:13px">
-        <option value="">All types</option>
+      <select id="browseSiteType" multiple onchange="filterBrowseSiteType()"
+              style="border:1px solid var(--border);border-radius:var(--radius);padding:4px 6px;font-size:13px;min-width:140px;height:auto;max-height:90px">
         ${[...new Set(data.sites.map(s => s.site_type).filter(Boolean))].sort()
           .map(t => `<option value="${t}">${t}</option>`).join("")}
       </select>
@@ -1440,9 +1442,8 @@ function _renderSectorAvail(data, from, to, sectorId, parkId, simulated) {
       <label>Check-out</label><input type="date" id="browseTo" value="${to}">
       <button class="btn" onclick="openSectorAvail(${sectorId},${parkId})">Apply</button>
       <label style="margin-left:8px">Site type</label>
-      <select id="browseSiteType" onchange="filterBrowseSiteType()"
-              style="border:1px solid var(--border);border-radius:var(--radius);padding:5px 10px;font-size:13px">
-        <option value="">All types</option>
+      <select id="browseSiteType" multiple onchange="filterBrowseSiteType()"
+              style="border:1px solid var(--border);border-radius:var(--radius);padding:4px 6px;font-size:13px;min-width:140px;height:auto;max-height:90px">
         ${[...new Set(data.sites.map(s => s.site_type).filter(Boolean))].sort()
           .map(t => `<option value="${t}">${t}</option>`).join("")}
       </select>
@@ -1693,11 +1694,12 @@ function closeLightbox(e) {
 function _lbKeyHandler(e) { if (e.key === 'Escape') closeLightbox(); }
 
 function filterBrowseSiteType() {
-  const filter = document.getElementById("browseSiteType")?.value.toLowerCase() || "";
-  const cards  = document.querySelectorAll(".browse-site-card");
+  const sel = document.getElementById("browseSiteType");
+  const selected = sel ? [...sel.selectedOptions].map(o => o.value.toLowerCase()) : [];
+  const cards = document.querySelectorAll(".browse-site-card");
   cards.forEach(card => {
     const type = (card.dataset.siteType || "").toLowerCase();
-    card.style.display = (!filter || type.includes(filter)) ? "" : "none";
+    card.style.display = (selected.length === 0 || selected.some(f => type.includes(f))) ? "" : "none";
   });
   // Show/hide boucle sections if all their cards are hidden
   document.querySelectorAll(".browse-boucle-section").forEach(sec => {
